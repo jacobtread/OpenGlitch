@@ -30,7 +30,6 @@ aery = "0.5"
 # Serialization / Deserialization
 serde = { version = "1", features = ["derive"] }
 serde_ini = "0.2"
-bsa = "0.2.1"
 
 # Optimize engine dependencies in debug mode
 [profile.dev.package."*"]

@@ -1251,20 +1251,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bsa"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1334b20d19da7a055620d067bc724473d6f3ea7af621cbbee53d3cdee248e06b"
-dependencies = [
- "bytemuck",
- "enumflags2",
- "libflate 1.4.0",
- "lz4",
- "num_enum 0.5.11",
- "thiserror",
-]
-
-[[package]]
 name = "bumpalo"
 version = "3.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1671,26 +1657,6 @@ name = "encase_derive_impl"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3fe2568f851fd6144a45fa91cfed8fe5ca8fc0b56ba6797bfc1ed2771b90e37c"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.39",
-]
-
-[[package]]
-name = "enumflags2"
-version = "0.7.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5998b4f30320c9d93aed72f63af821bfdac50465b75428fce77b48ec482c3939"
-dependencies = [
- "enumflags2_derive",
-]
-
-[[package]]
-name = "enumflags2_derive"
-version = "0.7.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f95e2801cd355d4a1a3e3953ce6ee5ae9603a5c833455343a8bfe3f44d418246"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2369,17 +2335,6 @@ checksum = "89d92a4743f9a61002fae18374ed11e7973f530cb3a3255fb354818118b2203c"
 
 [[package]]
 name = "libflate"
-version = "1.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5ff4ae71b685bbad2f2f391fe74f6b7659a34871c08b210fdc039e43bee07d18"
-dependencies = [
- "adler32",
- "crc32fast",
- "libflate_lz77 1.2.0",
-]
-
-[[package]]
-name = "libflate"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7d5654ae1795afc7ff76f4365c2c8791b0feb18e8996a96adad8ffd7c3b2bf"
@@ -2388,16 +2343,7 @@ dependencies = [
  "core2",
  "crc32fast",
  "dary_heap",
- "libflate_lz77 2.0.0",
-]
-
-[[package]]
-name = "libflate_lz77"
-version = "1.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a52d3a8bfc85f250440e4424db7d857e241a3aebbbe301f3eb606ab15c39acbf"
-dependencies = [
- "rle-decode-fast",
+ "libflate_lz77",
 ]
 
 [[package]]
@@ -2473,26 +2419,6 @@ name = "log"
 version = "0.4.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b5e6163cb8c49088c2c36f57875e58ccd8c87c7427f7fbd50ea6710b2f3f2e8f"
-
-[[package]]
-name = "lz4"
-version = "1.24.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7e9e2dd86df36ce760a60f6ff6ad526f7ba1f14ba0356f8254fb6905e6494df1"
-dependencies = [
- "libc",
- "lz4-sys",
-]
-
-[[package]]
-name = "lz4-sys"
-version = "1.9.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "57d27b317e207b10f69f5e75494119e391a96f48861ae870d1da6edac98ca900"
-dependencies = [
- "cc",
- "libc",
-]
 
 [[package]]
 name = "mach2"
@@ -2959,11 +2885,10 @@ dependencies = [
  "bevy_rapier3d",
  "binrw",
  "bitflags 2.4.1",
- "bsa",
  "bytemuck",
  "byteorder",
  "futures",
- "libflate 2.0.0",
+ "libflate",
  "nalgebra",
  "nom",
  "num_enum 0.7.1",
