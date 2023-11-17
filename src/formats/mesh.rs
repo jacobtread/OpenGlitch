@@ -1,10 +1,11 @@
 use binrw::{BinRead, FilePtr};
 
-use super::types::{ApeSphere, ApeVec3f, FixedString, RawMatrix4x3f};
+use super::types::{ApeSphere, ApeVec3f, FileOffset, FixedString, NullableFilePtr, RawMatrix4x3f};
 
 const FDATA_MESH_NAME_LENGTH: usize = 16;
 const FDATA_MAX_LOD_MESH_COUNT: usize = 8;
 const FDATA_BONE_NAME_LENGTH: usize = 32;
+const FDATA_VW_COUNT_PER_VTX: usize = 4;
 
 #[derive(Debug, BinRead)]
 #[br(big)]
@@ -33,22 +34,17 @@ pub struct FMeshHeader {
 
     pub lod_distance: [f32; FDATA_MAX_LOD_MESH_COUNT],
 
-    pub segments_offset: u32,
-    pub bones_offset: u32,
-    pub lights_offset: u32,
-    pub skeleton_index_array_offset: u32,
-    pub materials_offset: u32,
-    pub coll_tree_offset: u32,
-    pub mesh_data_offset: u32,
-}
+    pub segments: FileOffset<u32>,
 
-#[derive(Debug, BinRead)]
-#[br(big)]
-pub struct FMesh {
-    pub _a: u32,
-}
+    #[br(args { count: bone_count as usize })]
+    pub bones: NullableFilePtr<Vec<MeshBone>>,
 
-const FDATA_VW_COUNT_PER_VTX: usize = 4;
+    pub lights: FileOffset<u32>,
+    pub skeleton_index_array: FileOffset<u32>,
+    pub materials: FileOffset<u32>,
+    pub coll_tree: FileOffset<u32>,
+    pub mesh_data: FileOffset<u32>,
+}
 
 #[derive(Debug, BinRead, Default)]
 #[br(big)]
@@ -105,17 +101,11 @@ mod test {
 
     use crate::formats::mesh::{FMeshHeader, MeshBone};
 
-    use super::FMesh;
-
     #[test]
     fn test_load_mesh() {
         let mut file = File::open("data/ape/bridge01.ape").unwrap();
         let header: FMeshHeader = FMeshHeader::read(&mut file).unwrap();
         println!("Length: {}", file.metadata().unwrap().file_size());
         dbg!(&header);
-
-        file.seek(std::io::SeekFrom::Start(header.bones_offset as u64));
-        let bone: MeshBone = MeshBone::read(&mut file).unwrap();
-        dbg!(&bone);
     }
 }
