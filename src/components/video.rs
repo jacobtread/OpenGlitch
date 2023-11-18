@@ -5,7 +5,7 @@ use ffmpeg_next::format::{input, Pixel};
 use ffmpeg_next::frame::Video;
 use ffmpeg_next::software::scaling::context::Context as ScalingContext;
 use ffmpeg_next::software::scaling::Flags;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Resource for storing internal video player data which is !Send
 #[derive(Default)]
@@ -35,11 +35,16 @@ pub struct VideoPlayerInternal {
 #[derive(Component)]
 pub struct VideoPlayer {
     pub image_handle: Handle<Image>,
+    /// Whether to loop the video
+    pub looping: bool,
+    /// Whether the video has finished playing
+    pub finished: bool,
 }
 
 impl VideoPlayer {
     pub fn new<P>(
         path: P,
+        looping: bool,
         mut images: ResMut<Assets<Image>>,
     ) -> Result<(VideoPlayer, VideoPlayerInternal), ffmpeg_next::Error>
     where
@@ -56,10 +61,6 @@ impl VideoPlayer {
         let context_decoder =
             ffmpeg_next::codec::context::Context::from_parameters(video_stream.parameters())?;
         let decoder = context_decoder.decoder().video()?;
-
-        // decoder.delay()
-
-        debug!("bit: {:?}", decoder.delay());
 
         let scaler = ScalingContext::get(
             decoder.format(),
@@ -86,7 +87,11 @@ impl VideoPlayer {
         let image_handle: Handle<Image> = images.add(image);
 
         Ok((
-            VideoPlayer { image_handle },
+            VideoPlayer {
+                image_handle,
+                looping,
+                finished: false,
+            },
             VideoPlayerInternal {
                 input_context: input,
                 decoder,
@@ -109,7 +114,12 @@ fn play_video(
     mut video_resource: NonSendMut<VideoResource>,
     mut images: ResMut<Assets<Image>>,
 ) {
-    for (video_player, entity) in video_player_query.iter_mut() {
+    for (mut video_player, entity) in video_player_query.iter_mut() {
+        // Skip finished players
+        if video_player.finished {
+            continue;
+        }
+
         let data = video_resource.data.get_mut(&entity).unwrap();
         // read packets from stream until complete frame received
         while let Some((stream, packet)) = data.input_context.packets().next() {
@@ -131,6 +141,15 @@ fn play_video(
                 }
             }
         }
+
+        // Handle looping the video player
+        if video_player.looping {
+            data.input_context.seek(0, 0..0).unwrap();
+            return;
+        }
+
+        video_player.as_mut().finished = true;
+
         // no frame received
         // signal end of playback to decoder
         match data.decoder.send_eof() {

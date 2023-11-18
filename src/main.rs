@@ -53,9 +53,10 @@ fn init_startup_movie(
     mut video_resource: NonSendMut<VideoResource>,
     asset_server: Res<AssetServer>,
 ) {
-    const INTRO_MOVIE_FILE: &str = "data/Movies/xb_intro$.bik";
+    const INTRO_MOVIE_FILE: &str = "data/Movies/xb_Loading2.bik";
 
-    let (video_player, video_player_non_send) = VideoPlayer::new(INTRO_MOVIE_FILE, images).unwrap();
+    let (video_player, video_player_non_send) =
+        VideoPlayer::new(INTRO_MOVIE_FILE, true, images).unwrap();
 
     commands.spawn(Camera2dBundle::default());
     commands
