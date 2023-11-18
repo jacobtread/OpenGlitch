@@ -8,35 +8,59 @@ use std::{
 use binrw::{file_ptr::IntoSeekFrom, BinRead, BinResult, Endian};
 
 // Offset within the file that something can be found at
-pub type FileOffset<T> = T;
+#[derive(Debug, BinRead, Default)]
+pub struct PtrOffset(u32);
 
 // CFMtx43
 #[derive(Debug, BinRead, Default)]
-#[br(big)]
 pub struct RawMatrix4x3f {
     pub matrix: [[f32; 3]; 4],
 }
 
 // CFMtx44
 #[derive(Debug, BinRead, Default)]
-#[br(big)]
 pub struct RawMatrix4x4f {
     pub matrix: [[f32; 4]; 4],
 }
 
 #[derive(Debug, BinRead, Default)]
-#[br(big)]
-pub struct ApeVec3f {
+pub struct RawVec3f {
     pub x: f32,
     pub y: f32,
     pub z: f32,
 }
 
 #[derive(Debug, BinRead, Default)]
-#[br(big)]
-pub struct ApeSphere {
+pub struct RawVec2f {
+    pub x: f32,
+    pub y: f32,
+}
+
+#[derive(Debug, BinRead, Default)]
+pub struct RawSphere {
     pub radius: f32,
-    pub position: ApeVec3f,
+    pub position: RawVec3f,
+}
+
+#[derive(Debug, BinRead, Default)]
+pub struct RawColorRGBA {
+    pub red: f32,
+    pub green: f32,
+    pub blue: f32,
+    pub alpha: f32,
+}
+
+#[derive(Debug, BinRead, Default)]
+pub struct RawColorRGB {
+    pub red: f32,
+    pub green: f32,
+    pub blue: f32,
+}
+
+#[derive(Debug, BinRead, Default)]
+pub struct RawColorMotif {
+    pub color: RawColorRGBA,
+    pub modif_index: u32,
 }
 
 /// Null terminated string created from a fixed length
