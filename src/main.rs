@@ -4,8 +4,10 @@ use bevy::{
     prelude::*,
     window::{WindowResolution, WindowTheme},
 };
+use components::video::{VideoPlayer, VideoPlugin, VideoResource};
 use constants::VERSION;
 
+pub mod components;
 pub mod constants;
 pub mod formats;
 
@@ -34,5 +36,53 @@ fn main() {
                         .to_string(),
                 }),
         )
+        .add_plugins(VideoPlugin)
+        .add_systems(Startup, init_startup_movie)
         .run();
+}
+
+/// Plays the startup movie
+fn init_startup_movie(
+    mut commands: Commands,
+    images: ResMut<Assets<Image>>,
+    mut video_resource: NonSendMut<VideoResource>,
+    asset_server: Res<AssetServer>,
+) {
+    const INTRO_MOVIE_FILE: &str = "data/Movies/xb_intro$.bik";
+
+    let (video_player, video_player_non_send) = VideoPlayer::new(INTRO_MOVIE_FILE, images).unwrap();
+
+    commands.spawn(Camera2dBundle::default());
+    commands
+        .spawn(NodeBundle {
+            style: Style {
+                width: Val::Percent(100.),
+                height: Val::Percent(100.),
+                position_type: PositionType::Absolute,
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                ..default()
+            },
+            ..default()
+        })
+        .with_children(|parent| {
+            let entity = parent
+                .spawn(ImageBundle {
+                    style: Style {
+                        width: Val::Percent(100.),
+                        height: Val::Percent(100.),
+                        ..default()
+                    },
+                    image: video_player.image_handle.clone().into(),
+                    ..default()
+                })
+                .insert(video_player)
+                .id();
+            video_resource.data.insert(entity, video_player_non_send);
+        });
+
+    commands.spawn(AudioBundle {
+        source: asset_server.load("../data/Movies/xb_intro$.wav"),
+        ..Default::default()
+    });
 }

@@ -6,7 +6,7 @@ resolver = "2"
 
 [dependencies]
 # Game engine
-bevy = { version = "0.12.0", features = ["dynamic_linking"] }
+bevy = { version = "0.12.0", features = ["dynamic_linking", "wav"] }
 
 # Physics
 bevy_rapier3d = { version = "0.23", features = ["simd-stable"] }
@@ -26,6 +26,13 @@ futures = "0.3"
 binrw = "0.13"
 nom = "7"
 aery = "0.5"
+rodio = "*"
+
+
+# https://github.com/zmwangx/rust-ffmpeg/wiki/Notes-on-building
+ffmpeg-next = "6.0.0"
+
+ringbuf = "0.3.3"
 
 # Serialization / Deserialization
 serde = { version = "1", features = ["derive"] }
@@ -36,5 +43,5 @@ serde_ini = "0.2"
 opt-level = 3
 
 # Enable a small amount of optimization in debug mode
-[profile.dev.package.open_mojave]
+[profile.dev.package.open_ma]
 opt-level = 1
