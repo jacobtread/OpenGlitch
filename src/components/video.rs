@@ -46,6 +46,7 @@ impl VideoPlayer {
         P: AsRef<Path>,
     {
         let input = input(&path)?;
+
         let video_stream = input
             .streams()
             .best(ffmpeg_next::media::Type::Video)
@@ -55,6 +56,10 @@ impl VideoPlayer {
         let context_decoder =
             ffmpeg_next::codec::context::Context::from_parameters(video_stream.parameters())?;
         let decoder = context_decoder.decoder().video()?;
+
+        // decoder.delay()
+
+        debug!("bit: {:?}", decoder.delay());
 
         let scaler = ScalingContext::get(
             decoder.format(),
@@ -113,6 +118,7 @@ fn play_video(
                 // pass packet to decoder
                 data.decoder.send_packet(&packet).unwrap();
                 let mut decoded = Video::empty();
+
                 // check if complete frame was received
                 if data.decoder.receive_frame(&mut decoded).is_ok() {
                     let mut rgb_frame = Video::empty();

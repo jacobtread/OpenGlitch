@@ -4,6 +4,7 @@ use bevy::{
     prelude::*,
     window::{WindowResolution, WindowTheme},
 };
+use bevy_framepace::{FramepacePlugin, FramepaceSettings};
 use components::video::{VideoPlayer, VideoPlugin, VideoResource};
 use constants::VERSION;
 
@@ -36,6 +37,10 @@ fn main() {
                         .to_string(),
                 }),
         )
+        .add_plugins(FramepacePlugin)
+        .insert_resource(FramepaceSettings {
+            limiter: bevy_framepace::Limiter::from_framerate(30.),
+        })
         .add_plugins(VideoPlugin)
         .add_systems(Startup, init_startup_movie)
         .run();
