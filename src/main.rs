@@ -1,10 +1,17 @@
-use crate::constants::{WINDOW_DEFAULT_HEIGHT, WINDOW_DEFAULT_WIDTH};
+use std::{fs::File, os::windows::fs::MetadataExt};
+
+use crate::{
+    constants::{WINDOW_DEFAULT_HEIGHT, WINDOW_DEFAULT_WIDTH},
+    formats::mesh_raw::{create_bevy_mesh, FMesh},
+};
 use bevy::{
     log::{Level, LogPlugin},
     prelude::*,
     window::{WindowResolution, WindowTheme},
 };
+use bevy_flycam::prelude::*;
 use bevy_framepace::{FramepacePlugin, FramepaceSettings};
+use binrw::BinRead;
 use components::video::{VideoPlayer, VideoPlugin, VideoResource};
 use constants::VERSION;
 
@@ -42,8 +49,33 @@ fn main() {
             limiter: bevy_framepace::Limiter::from_framerate(30.),
         })
         .add_plugins(VideoPlugin)
-        .add_systems(Startup, init_startup_movie)
+        .add_systems(Startup, init_startup_mesh_test)
+        .add_plugins(PlayerPlugin)
         .run();
+}
+
+fn init_startup_mesh_test(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>) {
+    let mut file = File::open("data/ape/gcdggltch00.ape").unwrap();
+    let mut header: FMesh = FMesh::read(&mut file).unwrap();
+    println!("Length: {}", file.metadata().unwrap().file_size());
+    // dbg!(&header);
+    let mut mesh_data = (header.mesh_data.value.take()).unwrap();
+    let vb = mesh_data
+        .vertex_buffers
+        .value
+        .take()
+        .unwrap()
+        .pop()
+        .unwrap();
+    let mesh = create_bevy_mesh(vb);
+    let handle = meshes.add(mesh);
+
+    // Render the mesh with the custom texture using a PbrBundle, add the marker.
+    commands.spawn((PbrBundle {
+        mesh: handle,
+
+        ..default()
+    },));
 }
 
 /// Plays the startup movie

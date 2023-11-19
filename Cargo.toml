@@ -30,6 +30,7 @@ nom = "7"
 aery = "0.5"
 rodio = "*"
 
+bevy_flycam = "*"
 
 # https://github.com/zmwangx/rust-ffmpeg/wiki/Notes-on-building
 ffmpeg-next = "6.0.0"

@@ -1,3 +1,7 @@
+use bevy::render::{
+    mesh::{Indices, Mesh},
+    render_resource::PrimitiveTopology,
+};
 use binrw::{BinRead, FilePtr};
 use bitflags::bitflags;
 
@@ -164,6 +168,14 @@ bitflags! {
     }
 }
 
+#[derive(Debug, BinRead, PartialEq, Eq, Clone, Copy)]
+#[br(big, repr = u8)]
+pub enum GCPosType {
+    S8 = 1,
+    S16 = 3,
+    F32 = 4,
+}
+
 // GameCube "vertex buffer" format
 #[derive(Debug, BinRead)]
 #[br(big)]
@@ -171,7 +183,7 @@ pub struct GCVertexBuffer {
     pub flags: GCVertexBufferFlags,
 
     pub pos_count: u16,
-    pub pos_type: u8,
+    pub pos_type: GCPosType,
     pub pos_idx_type: u8,
     pub pos_stride: u8,
     pub pos_frac: u8,
@@ -181,11 +193,44 @@ pub struct GCVertexBuffer {
 
     pub vertex_format: u8,
 
-    pub position: PtrOffset,
+    #[br(args { count: pos_count as usize, inner: (pos_type,)})]
+    pub position: NullableFilePtr<Vec<GCVertBufferPos>>,
+    // pub position: PtrOffset,
     #[br(args { count: diffuse_count as usize })]
     pub diffuse: NullableFilePtr<Vec<GCColor>>,
     pub st: NullableFilePtr<GCST16>,
     pub nbt: NullableFilePtr<GCNBT8>,
+}
+
+#[derive(Debug, BinRead, Clone)]
+#[br(big, import(ty: GCPosType))]
+pub enum GCVertBufferPos {
+    #[br(pre_assert(ty == GCPosType::S8))]
+    S8 { x: i8, y: i8, z: i8 },
+    #[br(pre_assert(ty == GCPosType::S16))]
+    S16 { x: i16, y: i16, z: i16 },
+    #[br(pre_assert(ty == GCPosType::F32))]
+    F32 { x: f32, y: f32, z: f32 },
+}
+
+pub fn create_bevy_mesh(mut buffer: GCVertexBuffer) -> Mesh {
+    let values: Vec<[f32; 3]> = buffer
+        .position
+        .value
+        .take()
+        .unwrap()
+        .into_iter()
+        .map(|value| match value {
+            GCVertBufferPos::S8 { x, y, z } => [x as f32, y as f32, z as f32],
+            GCVertBufferPos::S16 { x, y, z } => [x as f32, y as f32, z as f32],
+            GCVertBufferPos::F32 { x, y, z } => [x, y, z],
+        })
+        .collect::<Vec<_>>();
+
+    let mesh = Mesh::new(PrimitiveTopology::TriangleList)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, values);
+
+    mesh
 }
 
 #[derive(Debug, BinRead)]
@@ -362,13 +407,22 @@ mod test {
     use bevy::log::debug;
     use binrw::BinRead;
 
-    use crate::formats::mesh_raw::{FMesh, FMeshBone};
+    use crate::formats::mesh_raw::{create_bevy_mesh, FMesh, FMeshBone};
 
     #[test]
     fn test_load_mesh() {
-        let mut file = File::open("data/ape/bridge01.ape").unwrap();
-        let header: FMesh = FMesh::read(&mut file).unwrap();
+        let mut file = File::open("data/ape/gcdggltch00.ape").unwrap();
+        let mut header: FMesh = FMesh::read(&mut file).unwrap();
         println!("Length: {}", file.metadata().unwrap().file_size());
         dbg!(&header);
+        let mut mesh_data = (header.mesh_data.value.take()).unwrap();
+        let vb = mesh_data
+            .vertex_buffers
+            .value
+            .take()
+            .unwrap()
+            .pop()
+            .unwrap();
+        let mesh = create_bevy_mesh(vb);
     }
 }
