@@ -12,6 +12,9 @@ const FDATA_MESH_NAME_LENGTH: usize = 16;
 const FDATA_MAX_LOD_MESH_COUNT: usize = 8;
 const FDATA_VW_COUNT_PER_VTX: usize = 4;
 const FDATA_BONE_NAME_LENGTH: usize = 32;
+const FLIGHT_NAME_LENGTH: usize = 16;
+const FLIGHT_TEXTURE_NAME_LENGTH: usize = 16;
+const FDATA_TEXNAME_LENGTH: usize = 16;
 
 /// Trait implemented by structures directly casted from
 /// memory buffers
@@ -67,19 +70,59 @@ pub struct CFVec3 {
 }
 
 #[derive(Debug, Clone, Copy, SwapBytes)]
+#[repr(C)]
+pub struct CFVec2 {
+    pub x: f32,
+    pub y: f32,
+}
+
+#[derive(Debug, Clone, Copy, SwapBytes)]
 #[repr(C, align(16))]
 pub struct CFMtx43A {
     pub matrix: [[f32; 3]; 4],
 }
 
+#[derive(Debug, Clone, Copy, SwapBytes)]
+#[repr(C)]
+pub struct CFMtx43 {
+    pub matrix: [[f32; 3]; 4],
+}
+
+#[derive(Debug, Clone, Copy, SwapBytes)]
+#[repr(C)]
+pub struct CFColorRGB {
+    pub red: f32,
+    pub green: f32,
+    pub blue: f32,
+    pub alpha: f32,
+}
+
+#[derive(Debug, Clone, Copy, SwapBytes)]
+#[repr(C)]
+pub struct CFColorRGBA {
+    pub red: f32,
+    pub green: f32,
+    pub blue: f32,
+    pub alpha: f32,
+}
+
+#[derive(Debug, Clone, Copy, SwapBytes)]
+#[repr(C)]
+pub struct CFColorMotif {
+    pub color: CFColorRGBA,
+    pub motif_index: u32,
+}
+
 /// Pointer type for 32bit pointers
 #[derive(SwapBytes, Clone, Copy)]
 #[repr(C)]
-pub struct Ptr32 {
+pub struct Ptr<T> {
     value: u32,
+    #[sb(skip)]
+    type_data: PhantomData<*const T>,
 }
 
-impl Ptr32 {
+impl<T> Ptr<T> {
     /// Offsets the pointer by the provided pointer
     pub fn offset(&mut self, ptr: *mut u8) {
         if self.value == 0 {
@@ -89,22 +132,36 @@ impl Ptr32 {
         self.value += ptr as u32;
     }
 
-    pub fn ptr_mut<T>(&self) -> *mut T {
+    pub fn ptr_mut(&self) -> *mut T {
         self.value as *mut T
     }
 
-    pub fn ptr<T>(&self) -> *const T {
+    pub fn ptr(&self) -> *const T {
         self.value as *const T
     }
 }
 
-impl Debug for Ptr32 {
+impl<T> Deref for Ptr<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        unsafe { &*self.ptr() }
+    }
+}
+
+impl<T> DerefMut for Ptr<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe { &mut *self.ptr_mut() }
+    }
+}
+
+impl<T> Debug for Ptr<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Ptr({:#08x})", self.value)
     }
 }
 
-impl Display for Ptr32 {
+impl<T> Display for Ptr<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Ptr({:#08x})", self.value)
     }
@@ -154,23 +211,23 @@ pub struct FMesh {
     pub lod_distance: [f32; FDATA_MAX_LOD_MESH_COUNT],
 
     /// Base of segment array with public information
-    pub segment_array: Ptr32,
+    pub segment_array: Ptr<FMeshSegment>,
     /// Pointer to bone array (number of elements is nBoneCount) (NULL if nBoneCount is 0)
-    pub bone_array: Ptr32,
+    pub bone_array: Ptr<FMeshBone>,
     /// Pointer to light array (number of elements is nLightCount) (NULL if nLightCount is 0)
-    pub light_array: Ptr32,
+    pub light_array: Ptr<FMeshLight>,
     /// Pointer to the skeleton index array used by FMeshBone_t::Skelton.nChildArrayStartIndex
-    pub skeleton_index_array: Ptr32,
+    pub skeleton_index_array: Ptr<u8>,
     /// Pointer to the array of materials
-    pub material_array: Ptr32,
+    pub material_array: Ptr<FMeshMaterial>,
 
     /// Pointer to an array of the mesh collision data structures (1 per segment)
-    pub collision_tree: Ptr32,
+    pub collision_tree: Ptr<() /* FkDOP_Tree_t */>,
     /// Texture layer ID array. Each slot matches up with a corresponding slot in each instance of this mesh.
-    pub tex_layer_array: Ptr32,
+    pub tex_layer_array: Ptr<FMeshTexLayerID>,
 
     /// Pointer to implementation-specific object data
-    pub mesh_is: Ptr32,
+    pub mesh_is: Ptr<FDX8Mesh>,
 }
 
 impl MemoryStructure for FMesh {
@@ -197,8 +254,33 @@ pub struct FMeshSegment {
 }
 
 impl FMesh {
-    pub fn segments(&mut self) -> &[FMeshSegment] {
+    pub fn segments(&self) -> &[FMeshSegment] {
         unsafe { std::slice::from_raw_parts(self.segment_array.ptr(), self.segment_count as usize) }
+    }
+
+    pub fn bones(&self) -> &[FMeshBone] {
+        unsafe { std::slice::from_raw_parts(self.bone_array.ptr(), self.bone_count as usize) }
+    }
+
+    pub fn lights(&self) -> &[FMeshLight] {
+        unsafe { std::slice::from_raw_parts(self.light_array.ptr(), self.light_count as usize) }
+    }
+
+    pub fn skeleton_index(&self, index: u8) -> u8 {
+        let array: *const u8 = self.skeleton_index_array.ptr();
+        unsafe { *array.offset(index as isize) }
+    }
+
+    pub fn materials(&self) -> &[FMeshMaterial] {
+        unsafe {
+            std::slice::from_raw_parts(self.material_array.ptr(), self.material_count as usize)
+        }
+    }
+
+    pub fn tex_layers(&self) -> &[FMeshTexLayerID] {
+        unsafe {
+            std::slice::from_raw_parts(self.tex_layer_array.ptr(), self.tex_layer_id_count as usize)
+        }
     }
 }
 
@@ -227,6 +309,267 @@ pub struct FMeshSkeleton {
     pub child_bone_count: u8,
     /// Index into the array of bone indices (FMesh_t::pnSkeletonIndexArray) of where this bone's child index list begins
     pub child_array_start_index: u8,
+}
+
+#[derive(Debug, Clone, Copy, SwapBytes)]
+#[repr(C)]
+pub struct FMeshLight {
+    // ASCIIZ name of the light
+    #[sb(skip)]
+    pub name: FixedString<FDATA_BONE_NAME_LENGTH>,
+
+    // texture that is projected by this light.  MAKE SURE YOU NULL TERMINATE THIS, EVEN IF YOU DON"T WANT A TEXTURE
+    #[sb(skip)]
+    pub per_pixel_tex_name: FixedString<FLIGHT_TEXTURE_NAME_LENGTH>,
+    // texture used to create the corona.  MAKE SURE YOU NULL TERMINATE THIS, EVEN IF YOU DON"T WANT A TEXTURE
+    #[sb(skip)]
+    pub corona_tex_name: FixedString<FLIGHT_TEXTURE_NAME_LENGTH>,
+
+    // See FLIGHT_FLAG_* for info
+    pub flags: u32,
+    // LIGHT ID SHOULD BE SET TO 0xffff, UNLESS BEING SET FROM WITHIN A TOOL
+    pub light_id: u16,
+    // Light type (see FLightType_e for info)
+    pub light_type: u8,
+    // Index into the parent model's bone (-1 if there is no parent bone)
+    pub parent_bone_index: i8,
+
+    /// Light intensity to be multiplied by each component (0.0f to 1.0f)
+    pub intensity: f32,
+    /// Light color motif (RGBA components range from 0.0f to 1.0f). Alpha is not used.
+    pub motif: CFColorMotif,
+    /// Light position and radius in model space (ignored for directional lights)
+    pub influence: CFSphere,
+    /// Light orientation in model space (or world space if not attached to an object).  Direction (away from source) is in m_vFront (dir and spot)
+    pub orientation: CFMtx43,
+
+    /// Spotlight inner full-angle in radians
+    pub spot_inner_radians: f32,
+    /// Spotlight outer full-angle in radians
+    pub spot_outer_radians: f32,
+
+    pub corona_scale: f32,
+}
+
+#[derive(Debug, Clone, Copy, SwapBytes)]
+#[repr(C)]
+pub struct FMeshMaterial {
+    /// Pointer to shader's lighting register array
+    pub shader_light_registers: Ptr<u32>,
+    /// Pointer to shader's surface register array
+    pub shader_surface_reigsters: Ptr<u32>,
+    /// Light Shader index for this material
+    pub light_shader_index: u8,
+    /// Specular Shader index for this material
+    pub specular_shader_index: u8,
+    /// Surface Shader index for this material
+    pub surface_shader_index: u16,
+    /// A mask that has bits set for each mesh part ID that uses it
+    pub part_id_mask: u32,
+    /// Pointer to the platform specific data for this material
+    pub platform_data: Ptr<()>,
+    /// A bit mask that identifies all of the LOD that use this material
+    pub lod_mask: u8,
+    /// 0=normal, 1=appear in front of 0, 2=appear in front of 1, etc. (negative values not allowed)
+    pub depth_bias_level: u8,
+    pub base_st_sets: u8,
+    pub light_map_st_sets: u8,
+    /// Array of texture layer indices used by this material (255=empty slot) (fill lower elements first)
+    /// Indices are into FMesh_t::pTexLayerIDArray[]
+    pub tex_layer_id_index: [u8; 4],
+    /// cos of angle of affect for angular emissive or angular translucency
+    pub affect_angle: f32,
+    /// Compressed affect normal used for determining material angle to camera (mult by 1/64)
+    pub compressed_affect_normal: [i8; 3],
+    /// Bone ID used to transform the affect angle
+    pub affect_bone_id: i8,
+    /// The radius of the material verts from the vAverageVertPos in model space represented as a percentage of
+    /// the mesh's bounding sphere through a unit float compressed to a u8 (multiply by (1/255) * mesh BoundSphere_MS.m_fRadius)
+    pub compressed_radius: u8,
+    _pad: u8,
+    /// Material flags (see FMESH_MTLFLAG_* for info)
+    pub mtl_flags: u16,
+    /// Key used by the engine to indicate that this material has already been submitted for drawing during the current viewport render
+    pub draw_key: u32,
+    /// Tint to be applied to the material
+    pub material_tint: CFColorRGB,
+    /// Average of the position of all verts using this material
+    pub average_vert_pos: CFVec3,
+    /// Hash key used in display list rendering (only valid in game)
+    pub dl_hash_key: u32,
+}
+
+#[derive(Debug, Clone, Copy, SwapBytes)]
+#[repr(C)]
+pub struct FMeshTexLayerID {
+    pub tex_layer_id: u8,
+    pub flags: u8,
+    pub flip_page_count: u8,
+    pub frames_per_flip: u8,
+    pub flip_palette: Ptr<Ptr<CFTexInst>>,
+    pub scroll_st_per_second: CFVec2,
+    pub uv_degree_rotation_per_second: f32,
+    pub compressed_uv_rot_anchor: [u8; 2],
+    _padding: [u8; 2],
+}
+
+#[derive(Debug, Clone, Copy, SwapBytes)]
+#[repr(C)]
+pub struct CFTexInst {
+    /// Pointer to TexDef to use
+    pub tex_def: Ptr<FTexDef>,
+    /// Double buffer texture data for RenderTargets
+    pub tex_buffer: Ptr<[FTexData; 2]>,
+    pub buffer_index: u8,
+    /// See FTEX_INSTFLAG_* for info
+    pub flags: u32,
+    /// 0.0f=normal, -1=bias by one smaller level, +1=bias by one larger level, etc.
+    pub mipmap_bias: f32,
+}
+
+#[derive(Debug, Clone, Copy, SwapBytes)]
+#[repr(C)]
+pub struct FTexDef {
+    pub tex_info: FTexInfo,
+    pub tex_data: Ptr<FTexData>,
+}
+
+#[derive(Debug, Clone, Copy, SwapBytes)]
+#[repr(C)]
+pub struct FTexInfo {
+    /// ASCIIZ name of texture
+    #[sb(skip)]
+    pub name: FixedString<FDATA_TEXNAME_LENGTH>,
+    /// Pointer to user-defined data
+    pub user_data: Ptr<()>,
+    /// Texel format (See FTexFmt_e)
+    pub tex_fmt: u8,
+    /// Palette format (See FTexPalFmt_e)
+    pub pal_fmt: u8,
+    /// See FTEX_FLAG_* for info
+    pub flags: u8,
+    /// Number of LODs. 1=not mipmapped. >1 for mipmapped images
+    pub lod_count: u8,
+    /// For render targets, this is the number of bits in the stencil buffer
+    pub render_target_stencil_bit_count: u8,
+    /// For render targets, this is the number of bits in the depth buffer
+    pub render_target_depth_bit_count: u8,
+
+    _reserved: [u8; 2],
+    /// Number of texels across of largest LOD image (always a power of 2)
+    pub texels_across: u16,
+    ///  Number of texels down of largest LOD image (always a power of 2)
+    pub texels_down: u16,
+}
+
+#[derive(Debug, Clone, Copy, SwapBytes)]
+#[repr(C)]
+pub struct FLink {
+    pub prev_link: Ptr<FLink>,
+    pub next_link: Ptr<FLink>,
+}
+
+#[derive(Debug, Clone, Copy, SwapBytes)]
+#[repr(C)]
+pub struct FTexData {
+    /// Public texture definition
+    pub tex_def: FTexDef,
+    /// Link to other texture resources
+    pub link: FLink,
+
+    /// See FDX8TEXFLAGS_* for info
+    pub flags: u8,
+    /// D3D LOD count
+    pub d3d_lod_count: u8,
+
+    /// D3D texture width
+    pub d3d_width: u16,
+    /// D3D texture height
+    pub d3d_height: u16,
+
+    /// D3D texel format used for this texture
+    pub d3d_format_color: u32,
+    /// D3D depth/stencil format (render targets only)
+    pub d3d_format_depth: u32,
+
+    /// Set bits indicate which stages this texture is selected into (0=none)
+    pub attached_stages: u32,
+    /// Approximate bytes consumed by this texture
+    pub texture_bytes: u32,
+
+    pub streaming_handle: Ptr<()>,
+    /// Pointer to the image data for the D3D texture if load-in-place
+    pub image_data: Ptr<()>,
+
+    /// Pointer to D3D texture object
+    pub d3d_texture: Ptr<() /* IDirect3DTexture8 */>,
+    /// Pointer to D3D depth-stencil surface (NULL=none)
+    pub d3d_depth_stencil: Ptr<() /* IDirect3DSurface8 */>,
+}
+
+#[derive(Debug, Clone, Copy, SwapBytes)]
+#[repr(C)]
+pub struct FDX8Mesh {
+    // See FDX8MESH_FLAG_* for info
+    pub flags: u16,
+    // Number of vertex buffers used by this mesh
+    pub vb_count: u8,
+    // Number of index buffers used by this mesh
+    pub ib_count: u8,
+    // The address offset for the temporary portion of the file when loaded (this portion is converted to DX resources).
+    pub disposable_offset: u32,
+    // Used only when nSegCount is 0
+    pub at_rest_bound_sphere: CFSphere,
+    // Pointer to platform-independent base object
+    pub mesh: Ptr<FMesh>,
+    // Array of vertex buffer descriptors
+    pub vb: Ptr<FDX8VB>,
+    // Array of Collision vertex buffers
+    pub coll_vert_buffer: Ptr<Ptr<CFVec3>>,
+    // Number of indices used by this mesh in each IB
+    pub indicies_count: Ptr<u16>,
+    // Pointer to an array of index buffers (array of u16s)
+    pub dx_ib: Ptr<Ptr<()>>,
+}
+
+type Dword = u32;
+type Bool8 = u8;
+
+#[derive(Debug, Clone, Copy, SwapBytes)]
+#[repr(C)]
+pub struct FDX8VB {
+    /// Link to other VBs
+    pub link: FLink,
+
+    /// Number of vertices in this DX vertex buffer
+    pub ctx_count: u32,
+    /// Number of bytes per vertex
+    pub bytes_per_vertex: u16,
+    /// Number of f32,f32 (S,T) texture coordinate pairs used for lightmaps, per vertex
+    pub lmtc_count: u16,
+    /// Pointer to the stream of lightmap UV's
+    pub lmuv_stream: Ptr<()>,
+    /// Pointer to the stream of basis vectors.
+    pub basis_stream: Ptr<()>,
+
+    /// Index into FDX8VB_InfoTable[] of the entry that describes this VB format (-1=shader)
+    pub info_index: i8,
+    /// TRUE=this VB is dynamic
+    pub dynamic: Bool8,
+    /// TRUE=software vertex processing
+    pub software_vp: Bool8,
+    /// TRUE=this VB is locked
+    pub locked: Bool8,
+    /// Set when Lock() is called to the memory address that can be filled with data
+    pub lock_buf: Ptr<()>,
+    /// Used to restore lock state if we lose the device
+    pub lock_offset: u32,
+    /// Used to restore lock state if we lose the device
+    pub lock_bytes: u32,
+    /// Handle to the vertex shader this VB is currently attached to (or FVF code if nInfoIndex is not -1)
+    pub vertex_shader: Dword,
+    /// Pointer to the actual DX vertex buffers
+    pub dx_vb: Ptr<() /* IDirect3DVertexBuffer8 */>,
 }
 
 /// Safe wrapper around a type created from a buffer to
@@ -259,8 +602,6 @@ impl<T> DerefMut for SafeBuffer<T> {
         unsafe { &mut *self.ptr }
     }
 }
-
-pub struct FDX8Mesh_t {}
 
 #[cfg(test)]
 mod test {
