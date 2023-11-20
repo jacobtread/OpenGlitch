@@ -65,7 +65,8 @@ pub struct RawColorMotif {
 
 /// Null terminated string created from a fixed length
 /// chunk of bytes
-#[derive(BinRead)]
+#[derive(BinRead, Clone, Copy)]
+#[repr(C)]
 pub struct FixedString<const LENGTH: usize> {
     bytes: [u8; LENGTH],
 }

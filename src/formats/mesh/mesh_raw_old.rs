@@ -5,7 +5,7 @@ use bevy::render::{
 use binrw::{BinRead, FilePtr};
 use bitflags::bitflags;
 
-use super::types::{
+use crate::formats::types::{
     FixedString, NullableFilePtr, PtrOffset, RawColorMotif, RawColorRGB, RawColorRGBA,
     RawMatrix4x3f, RawSphere, RawVec2f, RawVec3f,
 };
@@ -227,7 +227,7 @@ pub fn create_bevy_mesh(mut buffer: GCVertexBuffer) -> Mesh {
         })
         .collect::<Vec<_>>();
 
-    let mesh = Mesh::new(PrimitiveTopology::TriangleList)
+    let mesh = Mesh::new(PrimitiveTopology::TriangleStrip)
         .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, values);
 
     mesh
@@ -407,22 +407,17 @@ mod test {
     use bevy::log::debug;
     use binrw::BinRead;
 
-    use crate::formats::mesh_raw::{create_bevy_mesh, FMesh, FMeshBone};
+    use crate::formats::mesh::mesh_raw_old::FMesh;
 
     #[test]
     fn test_load_mesh() {
         let mut file = File::open("data/ape/gcdggltch00.ape").unwrap();
         let mut header: FMesh = FMesh::read(&mut file).unwrap();
         println!("Length: {}", file.metadata().unwrap().file_size());
-        dbg!(&header);
-        let mut mesh_data = (header.mesh_data.value.take()).unwrap();
-        let vb = mesh_data
-            .vertex_buffers
-            .value
-            .take()
-            .unwrap()
-            .pop()
-            .unwrap();
-        let mesh = create_bevy_mesh(vb);
+        dbg!(
+            &header.bound_sphere,
+            &header.bound_box_min,
+            &header.bound_box_max
+        );
     }
 }

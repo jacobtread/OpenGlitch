@@ -32,6 +32,8 @@ rodio = "*"
 
 bevy_flycam = "*"
 
+swapbytes = { version = "*", path = "../Rust/bytereorder" }
+
 # https://github.com/zmwangx/rust-ffmpeg/wiki/Notes-on-building
 ffmpeg-next = "6.0.0"
 
