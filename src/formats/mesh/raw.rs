@@ -10,6 +10,8 @@ use crate::formats::types::FixedString;
 
 const FDATA_MESH_NAME_LENGTH: usize = 16;
 const FDATA_MAX_LOD_MESH_COUNT: usize = 8;
+const FDATA_VW_COUNT_PER_VTX: usize = 4;
+const FDATA_BONE_NAME_LENGTH: usize = 32;
 
 /// Trait implemented by structures directly casted from
 /// memory buffers
@@ -64,6 +66,12 @@ pub struct CFVec3 {
     pub z: f32,
 }
 
+#[derive(Debug, Clone, Copy, SwapBytes)]
+#[repr(C, align(16))]
+pub struct CFMtx43A {
+    pub matrix: [[f32; 3]; 4],
+}
+
 /// Pointer type for 32bit pointers
 #[derive(SwapBytes, Clone, Copy)]
 #[repr(C)]
@@ -109,7 +117,7 @@ impl Display for Ptr32 {
 pub struct FMesh {
     /// ASCIIZ name of this mesh
     #[sb(skip)]
-    pub sz_name: FixedString<FDATA_MESH_NAME_LENGTH>,
+    pub name: FixedString<FDATA_MESH_NAME_LENGTH>,
     // Bounds the mesh in model space (might not be valid for skinned models)
     pub bound_sphere: CFSphere,
     pub bound_box_min: CFVec3,
@@ -165,12 +173,6 @@ pub struct FMesh {
     pub mesh_is: Ptr32,
 }
 
-impl FMesh {
-    pub fn segments(&mut self) -> &[()] {
-        unsafe { std::slice::from_raw_parts(self.segment_array.ptr(), self.segment_count as usize) }
-    }
-}
-
 impl MemoryStructure for FMesh {
     unsafe fn fix(&mut self, ptr: *mut u8) {
         self.segment_array.offset(ptr);
@@ -182,6 +184,49 @@ impl MemoryStructure for FMesh {
         self.tex_layer_array.offset(ptr);
         self.mesh_is.offset(ptr);
     }
+}
+
+#[derive(Debug, Clone, Copy, SwapBytes)]
+pub struct FMeshSegment {
+    /// Bounds the segment in model space
+    pub bound_sphere: CFSphere,
+    /// Number of simultaneous bone matrices used for vertices within this segment (1=segmented, but not skinned)
+    pub bone_mtx_count: u8,
+    /// Index into object instance's bone matrix palette (255=none)
+    pub bone_mtx_index: [u8; FDATA_VW_COUNT_PER_VTX],
+}
+
+impl FMesh {
+    pub fn segments(&mut self) -> &[FMeshSegment] {
+        unsafe { std::slice::from_raw_parts(self.segment_array.ptr(), self.segment_count as usize) }
+    }
+}
+
+#[derive(Debug, Clone, Copy, SwapBytes)]
+#[repr(C)]
+pub struct FMeshBone {
+    #[sb(skip)]
+    pub name: FixedString<FDATA_BONE_NAME_LENGTH>,
+    pub at_rest_bone_to_model: CFMtx43A,
+    pub at_rest_model_to_bone: CFMtx43A,
+    pub at_rest_parent_to_bone: CFMtx43A,
+    pub at_rest_bone_to_parent: CFMtx43A,
+    pub segmented_bound_sphere: CFSphere,
+    pub skeleton: FMeshSkeleton,
+    pub flags: u8,
+    pub part_id: u8,
+    padding: [u8; 3],
+}
+
+#[derive(Debug, Clone, Copy, SwapBytes)]
+#[repr(C)]
+pub struct FMeshSkeleton {
+    /// Bone index of this bone's parent (255 = no parent)
+    pub parent_bone_index: u8,
+    /// Number of children attached to this bone (0 = no children)
+    pub child_bone_count: u8,
+    /// Index into the array of bone indices (FMesh_t::pnSkeletonIndexArray) of where this bone's child index list begins
+    pub child_array_start_index: u8,
 }
 
 /// Safe wrapper around a type created from a buffer to
