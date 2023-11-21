@@ -3666,14 +3666,18 @@ checksum = "8fb1df15f412ee2e9dfc1c504260fa695c1c3f10fe9f4a6ee2d2184d7d6450e2"
 
 [[package]]
 name = "swapbytes"
-version = "0.1.0"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9c010fb1d52d70b47011b857f05f4ad9a346dd8317eac83b971d664a8467f5f0"
 dependencies = [
  "swapbytes-derive",
 ]
 
 [[package]]
 name = "swapbytes-derive"
-version = "0.1.1"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3b8a44601b86c9d41b6d35392e9e5bdea9f03b635a9ff3bb9a9c07770d022a6d"
 dependencies = [
  "darling",
  "proc-macro2",
