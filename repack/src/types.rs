@@ -1,6 +1,11 @@
+use std::{
+    ffi::CStr,
+    fmt::{Debug, Display},
+};
+
 /// Null terminated string created from a fixed length
 /// chunk of bytes
-#[derive(BinRead, Clone, Copy)]
+#[derive(Clone, Copy)]
 #[repr(C)]
 pub struct FixedString<const LENGTH: usize> {
     bytes: [u8; LENGTH],

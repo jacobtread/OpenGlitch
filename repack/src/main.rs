@@ -1,5 +1,5 @@
 pub mod raw;
-
+pub mod types;
 use raw::{load_memory_struct, FMesh, SafeBuffer};
 
 fn main() {
