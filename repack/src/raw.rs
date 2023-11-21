@@ -7,7 +7,7 @@ use std::{
 };
 use swapbytes::SwapBytes;
 
-use crate::formats::types::FixedString;
+use crate::types::FixedString;
 
 const FDATA_MESH_NAME_LENGTH: usize = 16;
 const FDATA_MAX_LOD_MESH_COUNT: usize = 8;
@@ -23,7 +23,7 @@ const FDATA_TEXNAME_LENGTH: usize = 16;
 /// # Safety
 ///
 /// Safe as long as the input data is not incorrect (Aka its unsafe)
-unsafe fn load_memory_struct<T>(buffer: Box<[u8]>) -> SafeBuffer<T>
+pub unsafe fn load_memory_struct<T>(buffer: Box<[u8]>) -> SafeBuffer<T>
 where
     T: Sized + SwapBytes + FixOffsets,
 {
@@ -122,120 +122,6 @@ pub struct CFColorMotif {
     pub motif_index: u32,
 }
 
-/// Pointer type for 32bit pointers
-#[derive(SwapBytes, Clone, Copy)]
-#[repr(C)]
-pub struct Ptr<T> {
-    value: u32,
-    #[sb(skip)]
-    type_data: PhantomData<*const T>,
-}
-
-impl<T> Ptr<T>
-where
-    T: FixOffsets,
-{
-    pub fn offset_and_fix(&mut self, ptr: *mut u8) {
-        self.offset(ptr);
-        self.try_fix_offsets(ptr);
-    }
-
-    pub fn try_fix_offsets(&mut self, ptr: *mut u8) {
-        if let Some(value) = self.try_deref_mut() {
-            value.fix_offsets(ptr);
-        }
-    }
-
-    pub fn offset_and_fix_slice(&mut self, length: usize, ptr: *mut u8) {
-        self.offset(ptr);
-        self.try_fix_slice_offsets(length, ptr);
-    }
-
-    pub fn try_fix_slice_offsets(&mut self, length: usize, ptr: *mut u8) {
-        if let Some(value) = self.try_as_slice_mut(length) {
-            value.iter_mut().for_each(|value| value.fix_offsets(ptr));
-        }
-    }
-}
-
-impl<T> Ptr<T> {
-    /// Offsets the pointer by the provided pointer
-    pub fn offset(&mut self, ptr: *mut u8) {
-        println!("{} {}", self.value, ptr);
-        if self.value == 0 {
-            return;
-        }
-
-        self.value += ptr as usize;
-    }
-
-    pub fn ptr_mut(&self) -> *mut T {
-        self.value as *mut T
-    }
-
-    pub fn ptr(&self) -> *const T {
-        self.value as *const T
-    }
-
-    pub fn try_deref(&self) -> Option<&T> {
-        if self.is_null() {
-            return None;
-        }
-        let value = unsafe { &*(self.value as *const T) };
-        Some(value)
-    }
-
-    pub fn try_deref_mut(&self) -> Option<&mut T> {
-        if self.is_null() {
-            return None;
-        }
-        let value = unsafe { &mut *(self.value as *mut T) };
-        Some(value)
-    }
-
-    pub fn is_null(&self) -> bool {
-        self.value == 0
-    }
-
-    /// Treats the pointer as a slice of the provided length
-    pub fn as_slice(&self, length: usize) -> &[T] {
-        unsafe { std::slice::from_raw_parts(self.ptr(), length) }
-    }
-
-    /// Treats the pointer as a mutable slice of the provided length
-    pub fn as_slice_mut(&mut self, length: usize) -> &mut [T] {
-        unsafe { std::slice::from_raw_parts_mut(self.ptr_mut(), length) }
-    }
-
-    /// Treats the pointer as a slice of the provided length
-    pub fn try_as_slice(&self, length: usize) -> Option<&[T]> {
-        if self.is_null() {
-            return None;
-        }
-        Some(unsafe { std::slice::from_raw_parts(self.ptr(), length) })
-    }
-
-    /// Treats the pointer as a mutable slice of the provided length
-    pub fn try_as_slice_mut(&mut self, length: usize) -> Option<&mut [T]> {
-        if self.is_null() {
-            return None;
-        }
-        Some(unsafe { std::slice::from_raw_parts_mut(self.ptr_mut(), length) })
-    }
-}
-
-impl<T> Debug for Ptr<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Ptr({:#08x})", self.value)
-    }
-}
-
-impl<T> Display for Ptr<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Ptr({:#08x})", self.value)
-    }
-}
-
 ///  FMesh_t - This is the base struct that holds the mesh geometry
 #[derive(Debug, Clone, Copy, SwapBytes)]
 #[repr(C)]
@@ -282,32 +168,43 @@ pub struct FMesh {
     pub lod_distance: [f32; FDATA_MAX_LOD_MESH_COUNT],
 
     /// Base of segment array with public information
-    segment_array: Ptr<FMeshSegment>,
+    segment_array: *mut FMeshSegment,
     /// Pointer to bone array (number of elements is nBoneCount) (NULL if nBoneCount is 0)
-    bone_array: Ptr<FMeshBone>,
+    bone_array: *mut FMeshBone,
     /// Pointer to light array (number of elements is nLightCount) (NULL if nLightCount is 0)
-    light_array: Ptr<FMeshLight>,
+    light_array: *mut FMeshLight,
     /// Pointer to the skeleton index array used by FMeshBone_t::Skelton.nChildArrayStartIndex
-    skeleton_index_array: Ptr<u8>,
+    skeleton_index_array: *mut u8,
     /// Pointer to the array of materials
-    material_array: Ptr<FMeshMaterial>,
+    material_array: *mut FMeshMaterial,
 
     /// Pointer to an array of the mesh collision data structures (1 per segment)
-    collision_tree: Ptr<() /* FkDOP_Tree_t */>,
+    collision_tree: *mut (), /* FkDOP_Tree_t */
     /// Texture layer ID array. Each slot matches up with a corresponding slot in each instance of this mesh.
-    tex_layer_array: Ptr<FMeshTexLayerID>,
+    tex_layer_array: *mut FMeshTexLayerID,
 
     /// Pointer to implementation-specific object data
-    mesh_is: Ptr<FGCMesh>,
+    mesh_is: *mut FGCMesh,
+}
+
+fn fix_ptr<T>(offset: *mut T, ptr: *mut u8) -> *mut T {
+    // Don't offset null pointers
+    if offset.is_null() {
+        return offset;
+    }
+
+    unsafe { ptr.byte_offset(offset as isize) }.cast()
 }
 
 impl FixOffsets for FMesh {
     fn fix_offsets(&mut self, ptr: *mut u8) {
-        self.segment_array.offset(ptr);
-        self.bone_array.offset(ptr);
-        self.light_array.offset(ptr);
-        self.skeleton_index_array.offset(ptr);
-        self.collision_tree.offset(ptr);
+        self.segment_array = fix_ptr(self.segment_array, ptr);
+        self.bone_array = fix_ptr(self.bone_array, ptr);
+        self.light_array = fix_ptr(self.light_array, ptr);
+        self.skeleton_index_array = fix_ptr(self.skeleton_index_array, ptr);
+        self.collision_tree = fix_ptr(self.collision_tree, ptr);
+
+        self.material_array = fix_ptr(self.material_array, ptr);
 
         self.material_array
             .offset_and_fix_slice(self.material_count as usize, ptr);
@@ -998,30 +895,5 @@ impl<T> Deref for SafeBuffer<T> {
 impl<T> DerefMut for SafeBuffer<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { &mut *self.ptr }
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use std::fs::File;
-
-    use crate::formats::mesh::raw::{load_memory_struct, SafeBuffer};
-
-    use super::FMesh;
-
-    #[test]
-    fn test_load_ape() {
-        // Read entire file into a buffer
-        let buffer = std::fs::read("data/ape/gcdggltch00.ape").unwrap();
-        // Drop extra buffer capacity
-        let buffer: Box<[u8]> = buffer.into_boxed_slice();
-
-        println!("Buffer length {}", buffer.len());
-
-        let mesh: SafeBuffer<FMesh> = unsafe { load_memory_struct::<FMesh>(buffer) };
-
-        // let value = unsafe { *mesh.skeleton_index_array };
-
-        dbg!(&*mesh);
     }
 }
