@@ -17,42 +17,41 @@ const FLIGHT_NAME_LENGTH: usize = 16;
 const FLIGHT_TEXTURE_NAME_LENGTH: usize = 16;
 const FDATA_TEXNAME_LENGTH: usize = 16;
 
-/// Trait implemented by structures directly casted from
-/// memory buffers
-pub trait MemoryStructure: Sized + SwapBytes {
-    /// Load the structure from the provided buffer pointer
-    /// and length of the buffer
-    ///
-    /// # Safety
-    ///
-    /// Safe as long as the input data is not incorrect (Aka its unsafe)
-    unsafe fn load(buffer: Box<[u8]>) -> SafeBuffer<Self> {
-        let ptr: *mut u8 = Box::into_raw(buffer).cast::<u8>();
+/// Load the structure from the provided buffer pointer
+/// and length of the buffer
+///
+/// # Safety
+///
+/// Safe as long as the input data is not incorrect (Aka its unsafe)
+unsafe fn load_memory_struct<T>(buffer: Box<[u8]>) -> SafeBuffer<T>
+where
+    T: Sized + SwapBytes + FixOffsets,
+{
+    let ptr: *mut u8 = Box::into_raw(buffer).cast::<u8>();
 
-        let mut buffer = SafeBuffer {
-            // Cast the pointer type to the output type
-            ptr: ptr.cast::<Self>(),
-        };
+    let mut buffer = SafeBuffer {
+        // Cast the pointer type to the output type
+        ptr: ptr.cast::<T>(),
+    };
 
-        let value_ref = &mut *buffer;
+    let value_ref = &mut *buffer;
 
-        // Fix up the data, if the system isn't big endian must
-        // swap the value endianess to little endian
-        #[cfg(not(target_endian = "big"))]
-        {
-            value_ref.swap_bytes_mut();
-        }
-        value_ref.fix(ptr);
-
-        buffer
+    // Fix up the data, if the system isn't big endian must
+    // swap the value endianess to little endian
+    #[cfg(not(target_endian = "big"))]
+    {
+        value_ref.swap_bytes_mut();
     }
+    value_ref.fix_offsets(ptr);
 
+    buffer
+}
+
+/// Trait implemented by structures that need to fix their
+/// pointer offsets
+pub trait FixOffsets {
     /// Fix up the pointers on the structure
-    ///
-    /// # Safety
-    ///
-    /// Safe as long as the input data is not incorrect (Aka its unsafe)
-    unsafe fn fix(&mut self, ptr: *mut u8);
+    fn fix_offsets(&mut self, ptr: *mut u8);
 }
 
 #[derive(Debug, Clone, Copy, SwapBytes)]
@@ -132,6 +131,33 @@ pub struct Ptr<T> {
     type_data: PhantomData<*const T>,
 }
 
+impl<T> Ptr<T>
+where
+    T: FixOffsets,
+{
+    pub fn offset_and_fix(&mut self, ptr: *mut u8) {
+        self.offset(ptr);
+        self.try_fix_offsets(ptr);
+    }
+
+    pub fn try_fix_offsets(&mut self, ptr: *mut u8) {
+        if let Some(value) = self.try_deref_mut() {
+            value.fix_offsets(ptr);
+        }
+    }
+
+    pub fn offset_and_fix_slice(&mut self, length: usize, ptr: *mut u8) {
+        self.offset(ptr);
+        self.try_fix_slice_offsets(length, ptr);
+    }
+
+    pub fn try_fix_slice_offsets(&mut self, length: usize, ptr: *mut u8) {
+        if let Some(value) = self.try_as_slice_mut(length) {
+            value.iter_mut().for_each(|value| value.fix_offsets(ptr));
+        }
+    }
+}
+
 impl<T> Ptr<T> {
     /// Offsets the pointer by the provided pointer
     pub fn offset(&mut self, ptr: *mut u8) {
@@ -149,19 +175,51 @@ impl<T> Ptr<T> {
     pub fn ptr(&self) -> *const T {
         self.value as *const T
     }
-}
 
-impl<T> Deref for Ptr<T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        unsafe { &*self.ptr() }
+    pub fn try_deref(&self) -> Option<&T> {
+        if self.is_null() {
+            return None;
+        }
+        let value = unsafe { &*(self.value as *const T) };
+        Some(value)
     }
-}
 
-impl<T> DerefMut for Ptr<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { &mut *self.ptr_mut() }
+    pub fn try_deref_mut(&self) -> Option<&mut T> {
+        if self.is_null() {
+            return None;
+        }
+        let value = unsafe { &mut *(self.value as *mut T) };
+        Some(value)
+    }
+
+    pub fn is_null(&self) -> bool {
+        self.value == 0
+    }
+
+    /// Treats the pointer as a slice of the provided length
+    pub fn as_slice(&self, length: usize) -> &[T] {
+        unsafe { std::slice::from_raw_parts(self.ptr(), length) }
+    }
+
+    /// Treats the pointer as a mutable slice of the provided length
+    pub fn as_slice_mut(&mut self, length: usize) -> &mut [T] {
+        unsafe { std::slice::from_raw_parts_mut(self.ptr_mut(), length) }
+    }
+
+    /// Treats the pointer as a slice of the provided length
+    pub fn try_as_slice(&self, length: usize) -> Option<&[T]> {
+        if self.is_null() {
+            return None;
+        }
+        Some(unsafe { std::slice::from_raw_parts(self.ptr(), length) })
+    }
+
+    /// Treats the pointer as a mutable slice of the provided length
+    pub fn try_as_slice_mut(&mut self, length: usize) -> Option<&mut [T]> {
+        if self.is_null() {
+            return None;
+        }
+        Some(unsafe { std::slice::from_raw_parts_mut(self.ptr_mut(), length) })
     }
 }
 
@@ -198,58 +256,106 @@ pub struct FMesh {
     /// The index into the FMeshBone_t array of the root bone (255 if this mesh has no bones)
     pub root_bone_index: i8,
     /// Number of bones in this model (0 if none)
-    pub bone_count: u8,
+    bone_count: u8,
     /// Number of segments in this object
-    pub segment_count: u8,
+    segment_count: u8,
     /// Number of entries in pTexLayerIDArray
-    pub tex_layer_id_count: u8,
+    tex_layer_id_count: u8,
+
     /// Number of entries in pTexLayerIDArray that have their FMESH_TEXLAYERIDFLAG_USE_ST_INFO flag set
-    pub tex_layer_id_count_st: u8,
+    _tex_layer_id_count_st: u8,
     /// Number of entries in pTexLayerIDArray that have their FMESH_TEXLAYERIDFLAG_USE_FLIP_INFO flag set
-    pub tex_layer_id_count_flip: u8,
+    _tex_layer_id_count_flip: u8,
+
     /// Number of lights attached to this mesh
-    pub light_count: u8,
+    light_count: u8,
     /// Number of materials in the material array (aMtl)
-    pub material_count: u8,
+    material_count: u8,
     /// Number of elements in the collision tree array
-    pub coll_tree_count: u8,
+    coll_tree_count: u8,
     /// Number of LOD meshes for this object
-    pub lod_count: u8,
+    lod_count: u8,
     /// Bias added to the current LOD for generating shadows
     pub shadow_lod_bias: u8,
 
     pub lod_distance: [f32; FDATA_MAX_LOD_MESH_COUNT],
 
     /// Base of segment array with public information
-    pub segment_array: Ptr<FMeshSegment>,
+    segment_array: Ptr<FMeshSegment>,
     /// Pointer to bone array (number of elements is nBoneCount) (NULL if nBoneCount is 0)
-    pub bone_array: Ptr<FMeshBone>,
+    bone_array: Ptr<FMeshBone>,
     /// Pointer to light array (number of elements is nLightCount) (NULL if nLightCount is 0)
-    pub light_array: Ptr<FMeshLight>,
+    light_array: Ptr<FMeshLight>,
     /// Pointer to the skeleton index array used by FMeshBone_t::Skelton.nChildArrayStartIndex
-    pub skeleton_index_array: Ptr<u8>,
+    skeleton_index_array: Ptr<u8>,
     /// Pointer to the array of materials
-    pub material_array: Ptr<FMeshMaterial>,
+    material_array: Ptr<FMeshMaterial>,
 
     /// Pointer to an array of the mesh collision data structures (1 per segment)
-    pub collision_tree: Ptr<() /* FkDOP_Tree_t */>,
+    collision_tree: Ptr<() /* FkDOP_Tree_t */>,
     /// Texture layer ID array. Each slot matches up with a corresponding slot in each instance of this mesh.
-    pub tex_layer_array: Ptr<FMeshTexLayerID>,
+    tex_layer_array: Ptr<FMeshTexLayerID>,
 
     /// Pointer to implementation-specific object data
-    pub mesh_is: Ptr<FGCMesh>,
+    mesh_is: Ptr<FGCMesh>,
 }
 
-impl MemoryStructure for FMesh {
-    unsafe fn fix(&mut self, ptr: *mut u8) {
+impl FixOffsets for FMesh {
+    fn fix_offsets(&mut self, ptr: *mut u8) {
         self.segment_array.offset(ptr);
         self.bone_array.offset(ptr);
         self.light_array.offset(ptr);
         self.skeleton_index_array.offset(ptr);
-        self.material_array.offset(ptr);
         self.collision_tree.offset(ptr);
-        self.tex_layer_array.offset(ptr);
-        self.mesh_is.offset(ptr);
+
+        self.material_array
+            .offset_and_fix_slice(self.material_count as usize, ptr);
+
+        // TODO: Fixup coll tree
+
+        self.tex_layer_array
+            .offset_and_fix_slice(self.tex_layer_id_count as usize, ptr);
+
+        self.mesh_is.offset_and_fix(ptr);
+    }
+}
+
+impl FMesh {
+    pub fn lod_distances(&self) -> &[f32] {
+        &self.lod_distance[..self.lod_count as usize]
+    }
+
+    pub fn segments(&self) -> &[FMeshSegment] {
+        self.segment_array.as_slice(self.segment_count as usize)
+    }
+
+    pub fn bones(&self) -> &[FMeshBone] {
+        self.bone_array.as_slice(self.bone_count as usize)
+    }
+
+    pub fn lights(&self) -> &[FMeshLight] {
+        self.light_array.as_slice(self.light_count as usize)
+    }
+
+    pub fn skeleton_index(&self, index: u8) -> u8 {
+        let array: *const u8 = self.skeleton_index_array.ptr();
+        unsafe { *array.offset(index as isize) }
+    }
+
+    pub fn materials(&self) -> &[FMeshMaterial] {
+        self.material_array.as_slice(self.material_count as usize)
+    }
+
+    pub fn tex_layers(&self) -> &[FMeshTexLayerID] {
+        self.tex_layer_array
+            .as_slice(self.tex_layer_id_count as usize)
+    }
+    pub fn collision_tree(&self) -> &[()] {
+        self.collision_tree.as_slice(self.coll_tree_count as usize)
+    }
+
+    pub fn impl_specific(&self) -> Option<&FGCMesh> {
+        self.mesh_is.try_deref()
     }
 }
 
@@ -261,37 +367,6 @@ pub struct FMeshSegment {
     pub bone_mtx_count: u8,
     /// Index into object instance's bone matrix palette (255=none)
     pub bone_mtx_index: [u8; FDATA_VW_COUNT_PER_VTX],
-}
-
-impl FMesh {
-    pub fn segments(&self) -> &[FMeshSegment] {
-        unsafe { std::slice::from_raw_parts(self.segment_array.ptr(), self.segment_count as usize) }
-    }
-
-    pub fn bones(&self) -> &[FMeshBone] {
-        unsafe { std::slice::from_raw_parts(self.bone_array.ptr(), self.bone_count as usize) }
-    }
-
-    pub fn lights(&self) -> &[FMeshLight] {
-        unsafe { std::slice::from_raw_parts(self.light_array.ptr(), self.light_count as usize) }
-    }
-
-    pub fn skeleton_index(&self, index: u8) -> u8 {
-        let array: *const u8 = self.skeleton_index_array.ptr();
-        unsafe { *array.offset(index as isize) }
-    }
-
-    pub fn materials(&self) -> &[FMeshMaterial] {
-        unsafe {
-            std::slice::from_raw_parts(self.material_array.ptr(), self.material_count as usize)
-        }
-    }
-
-    pub fn tex_layers(&self) -> &[FMeshTexLayerID] {
-        unsafe {
-            std::slice::from_raw_parts(self.tex_layer_array.ptr(), self.tex_layer_id_count as usize)
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, SwapBytes)]
@@ -377,7 +452,7 @@ pub struct FMeshMaterial {
     /// A mask that has bits set for each mesh part ID that uses it
     pub part_id_mask: u32,
     /// Pointer to the platform specific data for this material
-    pub platform_data: Ptr<()>,
+    pub platform_data: Ptr<FGCMeshMaterial>,
     /// A bit mask that identifies all of the LOD that use this material
     pub lod_mask: u8,
     /// 0=normal, 1=appear in front of 0, 2=appear in front of 1, etc. (negative values not allowed)
@@ -409,6 +484,19 @@ pub struct FMeshMaterial {
     pub dl_hash_key: u32,
 }
 
+impl FixOffsets for FMeshMaterial {
+    fn fix_offsets(&mut self, ptr: *mut u8) {
+        self.shader_light_registers.offset(ptr);
+        self.shader_surface_reigsters.offset(ptr);
+
+        self.platform_data.offset_and_fix(ptr);
+
+        // TODO: Fixup registers
+
+        // TODO: Fix hash key
+    }
+}
+
 #[derive(Debug, Clone, Copy, SwapBytes)]
 #[repr(C)]
 pub struct FMeshTexLayerID {
@@ -416,11 +504,27 @@ pub struct FMeshTexLayerID {
     pub flags: u8,
     pub flip_page_count: u8,
     pub frames_per_flip: u8,
+    // Pointer to flip palette (array of CFTexInst pointers). Number of palette entries is nFlipPageCount.
     pub flip_palette: Ptr<Ptr<CFTexInst>>,
     pub scroll_st_per_second: CFVec2,
     pub uv_degree_rotation_per_second: f32,
     pub compressed_uv_rot_anchor: [u8; 2],
     _padding: [u8; 2],
+}
+
+impl FixOffsets for FMeshTexLayerID {
+    fn fix_offsets(&mut self, ptr: *mut u8) {
+        self.flip_palette.offset(ptr);
+        if let Some(value) = self
+            .flip_palette
+            .try_as_slice_mut(self.flip_page_count as usize)
+        {
+            value.iter_mut().for_each(|value| {
+                value.offset(ptr);
+                value.try_fix_offsets(ptr);
+            })
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, SwapBytes)]
@@ -429,7 +533,7 @@ pub struct CFTexInst {
     /// Pointer to TexDef to use
     pub tex_def: Ptr<FTexDef>,
     /// Double buffer texture data for RenderTargets
-    pub tex_buffer: Ptr<[FTexData; 2]>,
+    pub tex_buffer: [Ptr<FTexData>; 2],
     pub buffer_index: u8,
     /// See FTEX_INSTFLAG_* for info
     pub flags: u32,
@@ -437,11 +541,28 @@ pub struct CFTexInst {
     pub mipmap_bias: f32,
 }
 
+impl FixOffsets for CFTexInst {
+    fn fix_offsets(&mut self, ptr: *mut u8) {
+        self.tex_def.offset_and_fix(ptr);
+
+        self.tex_buffer
+            .iter_mut()
+            .for_each(|value| value.offset_and_fix(ptr));
+    }
+}
+
 #[derive(Debug, Clone, Copy, SwapBytes)]
 #[repr(C)]
 pub struct FTexDef {
     pub tex_info: FTexInfo,
     pub tex_data: Ptr<FTexData>,
+}
+
+impl FixOffsets for FTexDef {
+    fn fix_offsets(&mut self, ptr: *mut u8) {
+        self.tex_info.fix_offsets(ptr);
+        self.tex_data.offset_and_fix(ptr);
+    }
 }
 
 #[derive(Debug, Clone, Copy, SwapBytes)]
@@ -472,11 +593,24 @@ pub struct FTexInfo {
     pub texels_down: u16,
 }
 
+impl FixOffsets for FTexInfo {
+    fn fix_offsets(&mut self, ptr: *mut u8) {
+        self.user_data.offset(ptr);
+    }
+}
+
 #[derive(Debug, Clone, Copy, SwapBytes)]
 #[repr(C)]
 pub struct FLink {
     pub prev_link: Ptr<FLink>,
     pub next_link: Ptr<FLink>,
+}
+
+impl FixOffsets for FLink {
+    fn fix_offsets(&mut self, ptr: *mut u8) {
+        self.prev_link.offset(ptr);
+        self.next_link.offset(ptr);
+    }
 }
 
 const GX_TF_CTF: u32 = 0x20;
@@ -551,13 +685,22 @@ pub struct FTexData {
     // GC texel format used for this texture
     pub gc_tex_fmt: GxTexFmt,
     // Pointer to the GC platform texture object
-    pub gc_tex_obj: Ptr<GCTexObj /* GCTexObj */>,
+    pub gc_tex_obj: Ptr<GCTexObj>,
     // Set bits indicate which stages this texture is selected into (0=none)
     pub attached_stages: u32,
     // Approximate bytes consumed by this texture
     pub texture_bytes: u32,
     // Pointer to raw texture data
     pub raw_texture: Ptr<()>,
+}
+
+impl FixOffsets for FTexData {
+    fn fix_offsets(&mut self, ptr: *mut u8) {
+        self.tex_def.fix_offsets(ptr);
+        self.link.fix_offsets(ptr);
+        self.gc_tex_obj.offset(ptr);
+        self.raw_texture.offset(ptr);
+    }
 }
 
 #[derive(Debug, Clone, Copy, SwapBytes)]
@@ -569,20 +712,121 @@ pub struct GCTexObj {
 #[derive(Debug, Clone, Copy, SwapBytes)]
 #[repr(C)]
 pub struct FGCMesh {
-    // Pointer to platform-independent base object
-    pub mesh: Ptr<FMesh>,
+    // Pointer to platform-independent base object (Always null unless set when loaded)
+    _mesh: Ptr<FMesh>,
+
     /// Used only when nSegCount is 0
     pub at_rest_bound_sphere: CFSphere,
     ///See FGCMESH_FLAG_* for info
     pub flags: u8,
     // Number of vertex buffers used by this mesh
-    pub vb_count: u8,
+    vb_count: u8,
     // Number of materials in this node
     pub mtl_count: u16,
     // Array of vertex buffer descriptors
-    pub vb: Ptr<FGCVB>,
+    vb: Ptr<FGCVB>,
     // Pointer to the mesh skin, if there is one
     pub mesh_skin: Ptr<FGCMeshSkin>,
+}
+
+impl FixOffsets for FGCMesh {
+    fn fix_offsets(&mut self, ptr: *mut u8) {
+        self.vb.offset_and_fix_slice(self.vb_count as usize, ptr);
+        self.mesh_skin.offset_and_fix(ptr);
+    }
+}
+
+impl FGCMesh {
+    pub fn vertex_buffers(&self) -> &[FGCVB] {
+        self.vb.as_slice(self.vb_count as usize)
+    }
+
+    pub fn vertex_buffers_mut(&mut self) -> &mut [FGCVB] {
+        self.vb.as_slice_mut(self.vb_count as usize)
+    }
+}
+
+bitflags! {
+    #[derive(Debug, Clone, Copy)]
+    #[repr(C)]
+    pub struct FGCDLContFlags: u8 {
+        const NONE    = 0x00;
+        const SKINNED = 0x01;
+        const CONSTANT_COLOR = 0x02;
+        const BUMPMAP = 0x04;
+        const FACING_OPP_DIR_LIGHT =0x08;
+        const STREAMING = 0x80;
+    }
+}
+
+#[derive(Debug, Clone, Copy, SwapBytes)]
+#[repr(C)]
+pub struct FGCDLCont {
+    // See display list flags, above
+    #[sb(skip)]
+    pub flags: FGCDLContFlags,
+    // Matrix index for this display list
+    pub matrix_idc: u8,
+    // ID for the LOD this display list is part of (0 is closest)
+    pub lod_id: u8,
+    pub part_id: u8,
+    // Number of stripped triangles in this display list
+    pub strip_tri_count: u16,
+    // Number of list triangles in this display list
+    pub list_tri_count: u16,
+    // Number of tri strips
+    pub strip_count: u16,
+    // Number of tri lists
+    pub list_count: u8,
+    // Index into the mesh's vertex buffers indicating which
+    pub vb_index: u8,
+    // size of buffer
+    pub size: u32,
+    pub buffer: Ptr<()>,
+    pub constant_color: FGCColor,
+}
+
+impl FixOffsets for FGCDLCont {
+    fn fix_offsets(&mut self, ptr: *mut u8) {
+        self.buffer.offset(ptr)
+    }
+}
+
+#[derive(Debug, Clone, Copy, SwapBytes)]
+#[repr(C)]
+pub struct FGCMeshMaterial {
+    // Array of display list containers for this material
+    dl_container: Ptr<FGCDLCont>,
+    // Number of display list containers used
+    dl_cont_count: u16,
+}
+
+impl FixOffsets for FGCMeshMaterial {
+    fn fix_offsets(&mut self, ptr: *mut u8) {
+        self.dl_container.offset(ptr);
+        if let Some(value) = self.display_containers_mut() {
+            value.iter_mut().for_each(|value| {
+                if value.flags.contains(FGCDLContFlags::STREAMING) {
+                    // TODO: handle streaming
+                } else {
+                    value.buffer.offset(ptr);
+                }
+            });
+        }
+    }
+}
+
+impl FGCMeshMaterial {
+    #[inline]
+    pub fn display_containers(&self) -> Option<&[FGCDLCont]> {
+        self.dl_container.try_as_slice(self.dl_cont_count as usize)
+    }
+
+    #[inline]
+    pub fn display_containers_mut(&mut self) -> Option<&mut [FGCDLCont]> {
+        self.dl_container
+            .try_as_slice_mut(self.dl_cont_count as usize)
+    }
 }
 
 #[derive(Debug, Clone, Copy, SwapBytes)]
@@ -604,6 +848,25 @@ pub struct FGCMeshSkin {
     pub skinned_verts: Ptr<FGCSkinPosNorm>,
     // Pointer to the array of weights (one to one correspondence with position)
     pub skin_weights: Ptr<FGCWeights>,
+}
+
+impl FixOffsets for FGCMeshSkin {
+    fn fix_offsets(&mut self, ptr: *mut u8) {
+        self.trans_desc.offset(ptr);
+        self.skinned_verts.offset(ptr);
+        self.skin_weights.offset(ptr);
+    }
+}
+
+impl FGCMeshSkin {
+    pub fn trans_desc(&self) -> &[FGCTransDesc] {
+        self.trans_desc.as_slice(self.tran_desc_count as usize)
+    }
+
+    pub fn skinned_verts(&self) -> &[FGCSkinPosNorm] {
+        self.skinned_verts
+            .as_slice(self.skinned_verts_count as usize)
+    }
 }
 
 #[derive(Debug, Clone, Copy, SwapBytes)]
@@ -697,6 +960,15 @@ pub struct FGCVB {
     pub nbt: Ptr<FGCNBT8>,
 }
 
+impl FixOffsets for FGCVB {
+    fn fix_offsets(&mut self, ptr: *mut u8) {
+        self.position.offset(ptr);
+        self.nbt.offset(ptr);
+        self.diffuse.offset(ptr);
+        self.st.offset(ptr);
+    }
+}
+
 /// Safe wrapper around a type created from a buffer to
 /// ensure the memory is cleaned up, can be derefered
 /// to access the inner type
@@ -732,7 +1004,7 @@ impl<T> DerefMut for SafeBuffer<T> {
 mod test {
     use std::fs::File;
 
-    use crate::formats::mesh::raw::{MemoryStructure, SafeBuffer};
+    use crate::formats::mesh::raw::{load_memory_struct, SafeBuffer};
 
     use super::FMesh;
 
@@ -745,7 +1017,7 @@ mod test {
 
         println!("Buffer length {}", buffer.len());
 
-        let mesh: SafeBuffer<FMesh> = unsafe { FMesh::load(buffer) };
+        let mesh: SafeBuffer<FMesh> = unsafe { load_memory_struct::<FMesh>(buffer) };
 
         // let value = unsafe { *mesh.skeleton_index_array };
 
