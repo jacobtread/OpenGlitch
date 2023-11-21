@@ -161,11 +161,12 @@ where
 impl<T> Ptr<T> {
     /// Offsets the pointer by the provided pointer
     pub fn offset(&mut self, ptr: *mut u8) {
+        println!("{} {}", self.value, ptr);
         if self.value == 0 {
             return;
         }
 
-        self.value += ptr as u32;
+        self.value += ptr as usize;
     }
 
     pub fn ptr_mut(&self) -> *mut T {
