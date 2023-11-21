@@ -100,6 +100,15 @@ pub struct CFColorRGB {
 
 #[derive(Debug, Clone, Copy, SwapBytes)]
 #[repr(C)]
+pub struct FGCColor {
+    pub red: u8,
+    pub green: u8,
+    pub blue: u8,
+    pub alpha: u8,
+}
+
+#[derive(Debug, Clone, Copy, SwapBytes)]
+#[repr(C)]
 pub struct CFColorRGBA {
     pub red: f32,
     pub green: f32,
@@ -228,7 +237,7 @@ pub struct FMesh {
     pub tex_layer_array: Ptr<FMeshTexLayerID>,
 
     /// Pointer to implementation-specific object data
-    pub mesh_is: Ptr<()>,
+    pub mesh_is: Ptr<FGCMesh>,
 }
 
 impl MemoryStructure for FMesh {
@@ -555,6 +564,137 @@ pub struct FTexData {
 #[repr(C)]
 pub struct GCTexObj {
     _dummy: [u32; 8],
+}
+
+#[derive(Debug, Clone, Copy, SwapBytes)]
+#[repr(C)]
+pub struct FGCMesh {
+    // Pointer to platform-independent base object
+    pub mesh: Ptr<FMesh>,
+    /// Used only when nSegCount is 0
+    pub at_rest_bound_sphere: CFSphere,
+    ///See FGCMESH_FLAG_* for info
+    pub flags: u8,
+    // Number of vertex buffers used by this mesh
+    pub vb_count: u8,
+    // Number of materials in this node
+    pub mtl_count: u16,
+    // Array of vertex buffer descriptors
+    pub vb: Ptr<FGCVB>,
+    // Pointer to the mesh skin, if there is one
+    pub mesh_skin: Ptr<FGCMeshSkin>,
+}
+
+#[derive(Debug, Clone, Copy, SwapBytes)]
+#[repr(C)]
+pub struct FGCMeshSkin {
+    // Number of skin translations
+    pub tran_desc_count: u16,
+    // Number of verts weighted to 1 matrix
+    pub td1_mtx_count: u16,
+    // Number of verts weighted to 2 matrices
+    pub td2_mtx_count: u16,
+    // Number of verts weighted to 3 or 4 matrices
+    pub td3_or_4mtx_count: u16,
+    // Pointer to the array of skin translations descriptions
+    pub trans_desc: Ptr<FGCTransDesc>,
+    // Number of skinned Verts
+    pub skinned_verts_count: u32,
+    // Pointer to the array of skinned verts
+    pub skinned_verts: Ptr<FGCSkinPosNorm>,
+    // Pointer to the array of weights (one to one correspondence with position)
+    pub skin_weights: Ptr<FGCWeights>,
+}
+
+#[derive(Debug, Clone, Copy, SwapBytes)]
+#[repr(C)]
+pub struct FGCTransDesc {
+    pub matrix_count: u8,
+    _pad: u8,
+    pub vert_count: u16,
+    pub mtx_ids: [u8; 4],
+}
+
+#[derive(Debug, Clone, Copy, SwapBytes)]
+#[repr(C)]
+pub struct FGCSkinPosNorm {
+    pub position: [i16; 3],
+    pub normal: [i16; 3],
+}
+
+#[derive(Debug, Clone, Copy, SwapBytes)]
+#[repr(C)]
+pub struct FGCWeights {
+    pub weights: [u8; 4],
+}
+
+bitflags! {
+    #[derive(Debug, Clone, Copy)]
+    #[repr(C)]
+    pub struct FGCVBFlags: u16 {
+        const NONE     = 0x00;
+        /// If skinned, the position and normal are presumed 48-bits each
+        const SKINNED  = 0x01; // position and normal composed of s16's
+        /// We assume fixed-point 16-bit normal, unless this flag is set:
+        const NORM_NBT = 0x10;	// normal has binormal and tangent for bump-mapping
+    }
+}
+
+impl SwapBytes for FGCVBFlags {
+    fn swap_bytes_mut(&mut self) {
+        let value = self.bits().swap_bytes();
+        *self = Self::from_bits_retain(value);
+    }
+}
+
+// 8 bit UV's do not have enough resolution.  16 bit seems to be fine
+#[derive(Debug, Clone, Copy, SwapBytes)]
+#[repr(C)]
+pub struct FGCST16 {
+    pub s: i16,
+    pub t: i16,
+}
+
+// Normal structure used for dynamic bump-mapping
+#[derive(Debug, Clone, Copy, SwapBytes)]
+#[repr(C)]
+pub struct FGCNBT8 {
+    pub n: [i8; 3],
+    pub b: [i8; 3],
+    pub t: [i8; 3],
+}
+
+/// GameCube "vertex buffer" format
+#[derive(Debug, Clone, Copy, SwapBytes)]
+#[repr(C)]
+pub struct FGCVB {
+    pub flags: FGCVBFlags,
+    // Number of positions in this vertex buffer
+    pub pos_count: u16,
+    // GC pos type (GX_F32, GX_S16, or GX_S8)
+    pub pos_type: u8,
+    // GC position index type (GX_INDEX8 or GX_INDEX16)
+    pub pos_idx_type: u8,
+    // Byte size of the position vector
+    pub pos_stride: u8,
+    // Number of bits in the fractional component of position
+    pub pos_frac: u8,
+
+    // Number of unique diffuse colors in this vertex buffer
+    pub diffuse_count: u16,
+    // GC color index type (GX_INDEX8 or GX_INDEX16)
+    pub color_idx_type: u8,
+
+    pub gc_vertex_format: u8,
+
+    // Pointer to the position data (in the case of skinned, position and normal)
+    pub position: Ptr<()>,
+    // Pointer to the diffuse color data (if any)
+    pub diffuse: Ptr<FGCColor>,
+    // Pointer to the ST data
+    pub st: Ptr<FGCST16>,
+    // For bumpmapped objects, Pointer to the normal, binormal and tangents
+    pub nbt: Ptr<FGCNBT8>,
 }
 
 /// Safe wrapper around a type created from a buffer to
