@@ -1,3 +1,4 @@
+use bitflags::bitflags;
 use std::{
     fmt::{Debug, Display},
     marker::PhantomData,
@@ -227,7 +228,7 @@ pub struct FMesh {
     pub tex_layer_array: Ptr<FMeshTexLayerID>,
 
     /// Pointer to implementation-specific object data
-    pub mesh_is: Ptr<FDX8Mesh>,
+    pub mesh_is: Ptr<()>,
 }
 
 impl MemoryStructure for FMesh {
@@ -469,6 +470,60 @@ pub struct FLink {
     pub next_link: Ptr<FLink>,
 }
 
+const GX_TF_CTF: u32 = 0x20;
+const GX_TF_ZTF: u32 = 0x10;
+
+#[allow(non_camel_case_types)]
+#[derive(Debug, Clone, Copy, SwapBytes)]
+#[repr(u32)]
+pub enum GxTexFmt {
+    TF_I4 = 0x0,
+    TF_I8 = 0x1,
+    TF_IA4 = 0x2,
+    TF_IA8 = 0x3,
+    TF_RGB565 = 0x4,
+    TF_RGB5A3 = 0x5,
+    TF_RGBA8 = 0x6,
+    TF_CMPR = 0xE,
+
+    CTF_R4 = GX_TF_CTF,
+    CTF_RA4 = 0x2 | GX_TF_CTF,
+    CTF_RA8 = 0x3 | GX_TF_CTF,
+    CTF_YUVA8 = 0x6 | GX_TF_CTF,
+    CTF_A8 = 0x7 | GX_TF_CTF,
+    CTF_R8 = 0x8 | GX_TF_CTF,
+    CTF_G8 = 0x9 | GX_TF_CTF,
+    CTF_B8 = 0xA | GX_TF_CTF,
+    CTF_RG8 = 0xB | GX_TF_CTF,
+    CTF_GB8 = 0xC | GX_TF_CTF,
+
+    TF_Z8 = 0x1 | GX_TF_ZTF,
+    TF_Z16 = 0x3 | GX_TF_ZTF,
+    TF_Z24X8 = 0x6 | GX_TF_ZTF,
+
+    CTF_Z4 = GX_TF_ZTF | GX_TF_CTF,
+    CTF_Z8M = 0x9 | GX_TF_ZTF | GX_TF_CTF,
+    CTF_Z8L = 0xA | GX_TF_ZTF | GX_TF_CTF,
+    CTF_Z16L = 0xC | GX_TF_ZTF | GX_TF_CTF,
+}
+
+bitflags! {
+    #[derive(Debug, Clone, Copy)]
+    #[repr(C)]
+    pub struct FTexDataFlags: u8 {
+        const NONE    = 0x00;
+        // Texture is created at runtime
+        const RUNTIME = 0x01;
+    }
+}
+
+impl SwapBytes for FTexDataFlags {
+    fn swap_bytes_mut(&mut self) {
+        let value = self.bits().swap_bytes();
+        *self = FTexDataFlags::from_bits_retain(value);
+    }
+}
+
 #[derive(Debug, Clone, Copy, SwapBytes)]
 #[repr(C)]
 pub struct FTexData {
@@ -476,100 +531,30 @@ pub struct FTexData {
     pub tex_def: FTexDef,
     /// Link to other texture resources
     pub link: FLink,
-
-    /// See FDX8TEXFLAGS_* for info
-    pub flags: u8,
-    /// D3D LOD count
-    pub d3d_lod_count: u8,
-
-    /// D3D texture width
-    pub d3d_width: u16,
-    /// D3D texture height
-    pub d3d_height: u16,
-
-    /// D3D texel format used for this texture
-    pub d3d_format_color: u32,
-    /// D3D depth/stencil format (render targets only)
-    pub d3d_format_depth: u32,
-
-    /// Set bits indicate which stages this texture is selected into (0=none)
+    /// bitset of FGCTEXFLAGS_NONE, FGCTEXFLAGS_RUNTIME
+    pub flags: FTexDataFlags,
+    // LOD count
+    pub lod_count: u8,
+    // texture width
+    pub width: u16,
+    // texture height
+    pub height: u16,
+    // GC texel format used for this texture
+    pub gc_tex_fmt: GxTexFmt,
+    // Pointer to the GC platform texture object
+    pub gc_tex_obj: Ptr<GCTexObj /* GCTexObj */>,
+    // Set bits indicate which stages this texture is selected into (0=none)
     pub attached_stages: u32,
-    /// Approximate bytes consumed by this texture
+    // Approximate bytes consumed by this texture
     pub texture_bytes: u32,
-
-    pub streaming_handle: Ptr<()>,
-    /// Pointer to the image data for the D3D texture if load-in-place
-    pub image_data: Ptr<()>,
-
-    /// Pointer to D3D texture object
-    pub d3d_texture: Ptr<() /* IDirect3DTexture8 */>,
-    /// Pointer to D3D depth-stencil surface (NULL=none)
-    pub d3d_depth_stencil: Ptr<() /* IDirect3DSurface8 */>,
+    // Pointer to raw texture data
+    pub raw_texture: Ptr<()>,
 }
 
 #[derive(Debug, Clone, Copy, SwapBytes)]
 #[repr(C)]
-pub struct FDX8Mesh {
-    // See FDX8MESH_FLAG_* for info
-    pub flags: u16,
-    // Number of vertex buffers used by this mesh
-    pub vb_count: u8,
-    // Number of index buffers used by this mesh
-    pub ib_count: u8,
-    // The address offset for the temporary portion of the file when loaded (this portion is converted to DX resources).
-    pub disposable_offset: u32,
-    // Used only when nSegCount is 0
-    pub at_rest_bound_sphere: CFSphere,
-    // Pointer to platform-independent base object
-    pub mesh: Ptr<FMesh>,
-    // Array of vertex buffer descriptors
-    pub vb: Ptr<FDX8VB>,
-    // Array of Collision vertex buffers
-    pub coll_vert_buffer: Ptr<Ptr<CFVec3>>,
-    // Number of indices used by this mesh in each IB
-    pub indicies_count: Ptr<u16>,
-    // Pointer to an array of index buffers (array of u16s)
-    pub dx_ib: Ptr<Ptr<()>>,
-}
-
-type Dword = u32;
-type Bool8 = u8;
-
-#[derive(Debug, Clone, Copy, SwapBytes)]
-#[repr(C)]
-pub struct FDX8VB {
-    /// Link to other VBs
-    pub link: FLink,
-
-    /// Number of vertices in this DX vertex buffer
-    pub ctx_count: u32,
-    /// Number of bytes per vertex
-    pub bytes_per_vertex: u16,
-    /// Number of f32,f32 (S,T) texture coordinate pairs used for lightmaps, per vertex
-    pub lmtc_count: u16,
-    /// Pointer to the stream of lightmap UV's
-    pub lmuv_stream: Ptr<()>,
-    /// Pointer to the stream of basis vectors.
-    pub basis_stream: Ptr<()>,
-
-    /// Index into FDX8VB_InfoTable[] of the entry that describes this VB format (-1=shader)
-    pub info_index: i8,
-    /// TRUE=this VB is dynamic
-    pub dynamic: Bool8,
-    /// TRUE=software vertex processing
-    pub software_vp: Bool8,
-    /// TRUE=this VB is locked
-    pub locked: Bool8,
-    /// Set when Lock() is called to the memory address that can be filled with data
-    pub lock_buf: Ptr<()>,
-    /// Used to restore lock state if we lose the device
-    pub lock_offset: u32,
-    /// Used to restore lock state if we lose the device
-    pub lock_bytes: u32,
-    /// Handle to the vertex shader this VB is currently attached to (or FVF code if nInfoIndex is not -1)
-    pub vertex_shader: Dword,
-    /// Pointer to the actual DX vertex buffers
-    pub dx_vb: Ptr<() /* IDirect3DVertexBuffer8 */>,
+pub struct GCTexObj {
+    _dummy: [u32; 8],
 }
 
 /// Safe wrapper around a type created from a buffer to
