@@ -1,6 +1,7 @@
 pub mod raw;
+pub mod st;
 pub mod types;
-use raw::{load_memory_struct, FMesh, SafeBuffer};
+use st::{load_memory_struct, FMesh, SafeBuffer};
 
 fn main() {
     // Read entire file into a buffer
