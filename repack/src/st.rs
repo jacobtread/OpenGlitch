@@ -170,6 +170,30 @@ where
     }
 }
 
+/// Attempts to fix the offsets of all the values in an array at `value` of
+/// the provided `length` if the `value` pointer is not null
+///
+/// # Safety
+///
+/// This is not safe, it relies on the values present in the compiled game
+/// assets being correct, that is the only assurance of correctness
+pub unsafe fn try_ptr_fix_array<T, L>(value: &mut *mut *mut T, length: L, ptr: *mut u8)
+where
+    T: Fixable,
+    L: Into<usize> + Copy,
+    T: 'static,
+{
+    // Fix the pointer itself
+    *value = fix_offset(*value, ptr);
+
+    // Try fix the elements
+    if let Some(array) = array_ptr_mut(*value, length) {
+        array.iter_mut().for_each(|value| {
+            try_fix(value, ptr);
+        });
+    }
+}
+
 #[derive(Debug, Clone, Copy, SwapBytes)]
 #[repr(C)]
 pub struct CFSphere {

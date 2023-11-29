@@ -52,19 +52,19 @@ fn main() {
     let first_buffer = &buffers[0];
 
     let values = first_buffer.normalized();
-    let indices = first_buffer.normalized_indicies();
+    // let indices = first_buffer.normalized_indicies();
 
     for value in &values {
         writeln!(&mut buffer_dump, "{},{},{}", value.x, value.y, value.z);
     }
     println!("{}", values.len());
 
-    for value in indices {
-        if value as usize > values.len() {
-            // panic!("Index out of range {}", value);
-        }
-        writeln!(&mut buffer_dump_index, "{}", value);
-    }
+    // for value in indices {
+    //     if value as usize > values.len() {
+    //         // panic!("Index out of range {}", value);
+    //     }
+    //     writeln!(&mut buffer_dump_index, "{}", value);
+    // }
 
     for buffer in buffers {
         let positions = buffer.positions().unwrap();

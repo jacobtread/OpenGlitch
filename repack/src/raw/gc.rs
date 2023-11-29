@@ -567,58 +567,7 @@ pub struct GxDisplayListContainer {
     pub constant_color: GxColor,
 }
 
-impl GxDisplayListContainer {
-    pub fn normalized_indicies(&self, index_type: GxAttrType) -> Vec<u16> {
-        match self.indicies(index_type).unwrap() {
-            GxVertexBufferIndex::Index8(value) => value.iter().map(|value| *value as u16).collect(),
-            GxVertexBufferIndex::Index16(value) => value.to_vec(),
-        }
-    }
-
-    pub fn indicies(&self, index_type: GxAttrType) -> Option<GxVertexBufferIndex<'_>> {
-        Some(match index_type {
-            GxAttrType::Index8 => GxVertexBufferIndex::Index8(unsafe {
-                array_ptr(
-                    self.buffer.cast::<u8>(),
-                    self.size as usize / std::mem::size_of::<u8>(),
-                )?
-            }),
-            GxAttrType::Index16 => GxVertexBufferIndex::Index16(unsafe {
-                array_ptr(
-                    self.buffer.cast::<u16>(),
-                    self.size as usize / std::mem::size_of::<u16>(),
-                )?
-            }),
-            _ => panic!("Unknown buffer index type"),
-        })
-    }
-    pub fn indicies_mut(&mut self, index_type: GxAttrType) -> Option<GxVertexBufferIndexMut<'_>> {
-        Some(match index_type {
-            GxAttrType::Index8 => GxVertexBufferIndexMut::Index8(unsafe {
-                array_ptr_mut(
-                    self.buffer.cast::<u8>(),
-                    self.size as usize / std::mem::size_of::<u8>(),
-                )?
-            }),
-            GxAttrType::Index16 => GxVertexBufferIndexMut::Index16(unsafe {
-                array_ptr_mut(
-                    self.buffer.cast::<u16>(),
-                    self.size as usize / std::mem::size_of::<u16>(),
-                )?
-            }),
-            _ => panic!("Unknown buffer index type"),
-        })
-    }
-
-    pub fn fix_indicies(&mut self) {
-        if let Some(indicies) = self.indicies_mut() {
-            match indicies {
-                GxVertexBufferIndexMut::Index8(values) => {}
-                GxVertexBufferIndexMut::Index16(values) => values.swap_bytes_mut(),
-            }
-        }
-    }
-}
+impl GxDisplayListContainer {}
 
 impl Fixable for GxDisplayListContainer {
     unsafe fn fix_offset(&mut self, ptr: *mut u8) {
