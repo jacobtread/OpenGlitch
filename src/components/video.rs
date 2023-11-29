@@ -20,7 +20,9 @@ impl Plugin for VideoPlugin {
     fn build(&self, app: &mut App) {
         app.init_non_send_resource::<VideoResource>();
         app.add_systems(Startup, init_ffmpeg);
-        app.add_systems(Update, play_video);
+        // Fixed updates should occur at 30Hz/30fps for videos
+        app.insert_resource(Time::<Fixed>::from_hz(30.));
+        app.add_systems(FixedUpdate, play_video);
     }
 }
 
