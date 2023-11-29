@@ -1,7 +1,7 @@
 //! Raw game cube types
 
 use bitflags::bitflags;
-use std::ptr::null_mut;
+use std::{mem::size_of, ptr::null_mut};
 use swapbytes::SwapBytes;
 
 use crate::st::{array_ptr, array_ptr_mut, fix_offset, try_fix, try_fix_array, CFSphere, Fixable};
@@ -108,7 +108,7 @@ pub struct GxVertexBuffer {
     /// Flags for this vertex buffer
     pub flags: GxVertexBufferFlags,
     /// Number of positions in this vertex buffer
-    position_count: u16,
+    pub position_count: u16,
     /// Type of positions stored in this buffer
     position_type: GxCompType,
     /// Index type for positions
@@ -137,14 +137,93 @@ pub struct GxVertexBuffer {
 }
 
 impl GxVertexBuffer {
-    pub fn get_point(&self, _index: u32) -> (f32, f32, f32) {
+    pub fn normalized(&self) -> Vec<GxPosF32> {
+        let positions = self
+            .positions()
+            .expect("Vertex buffer positions are invalid");
+        let adjust = *POS_FRACTIONAL_ADJUSTMENT
+            .get(self.position_fraction_bits as usize)
+            .expect("Missing fractional adjustment for vertex buffer");
+        let mut out = Vec::with_capacity(self.position_count as usize);
+
+        match positions {
+            GxVertexBufferPosition::S8(values) => {
+                values.iter().for_each(|value| {
+                    out.push(GxPosF32 {
+                        x: value.x as f32,
+                        y: value.y as f32,
+                        z: value.z as f32,
+                    });
+                });
+            }
+            GxVertexBufferPosition::S16(values) => {
+                values.iter().for_each(|value| {
+                    out.push(GxPosF32 {
+                        x: value.x as f32,
+                        y: value.y as f32,
+                        z: value.z as f32,
+                    });
+                });
+            }
+            GxVertexBufferPosition::SkinnedS16(values) => {
+                values.iter().for_each(|value| {
+                    out.push(GxPosF32 {
+                        x: value.position.x as f32,
+                        y: value.position.y as f32,
+                        z: value.position.z as f32,
+                    });
+                });
+            }
+            GxVertexBufferPosition::F32(values) => {
+                values.iter().for_each(|value| {
+                    out.push(*value);
+                });
+            }
+        }
+
+        out
+    }
+
+    pub fn get_position(&self, index: usize) -> Option<GxPosF32> {
+        let positions = self
+            .positions()
+            .expect("Vertex buffer positions are invalid");
         let adjust = *POS_FRACTIONAL_ADJUSTMENT
             .get(self.position_fraction_bits as usize)
             .expect("Missing fractional adjustment for vertex buffer");
 
         // Multiply non float values by adjust
 
-        todo!()
+        match positions {
+            GxVertexBufferPosition::S8(value) => {
+                let value = value.get(index)?;
+
+                Some(GxPosF32 {
+                    x: value.x as f32 * adjust,
+                    y: value.y as f32 * adjust,
+                    z: value.z as f32 * adjust,
+                })
+            }
+            GxVertexBufferPosition::S16(value) => {
+                let value = value.get(index)?;
+
+                Some(GxPosF32 {
+                    x: value.x as f32 * adjust,
+                    y: value.y as f32 * adjust,
+                    z: value.z as f32 * adjust,
+                })
+            }
+            GxVertexBufferPosition::SkinnedS16(value) => {
+                let value = value.get(index)?;
+
+                Some(GxPosF32 {
+                    x: value.position.x as f32 * adjust,
+                    y: value.position.y as f32 * adjust,
+                    z: value.position.z as f32 * adjust,
+                })
+            }
+            GxVertexBufferPosition::F32(value) => value.get(index).copied(),
+        }
     }
 
     /// Access the positions array using the provided type
@@ -220,17 +299,14 @@ impl GxVertexBuffer {
         }
 
         // Get access to the position data
-        let positions = match self.positions_mut() {
-            Some(value) => value,
-            None => return,
-        };
-
-        // Swap the endianess of the position data
-        match positions {
-            GxVertexBufferPositionMut::S8(_values) => { /* Theres no need to swap i8's */ }
-            GxVertexBufferPositionMut::S16(values) => values.swap_bytes_mut(),
-            GxVertexBufferPositionMut::SkinnedS16(values) => values.swap_bytes_mut(),
-            GxVertexBufferPositionMut::F32(values) => values.swap_bytes_mut(),
+        if let Some(positions) = self.positions_mut() {
+            // Swap the endianess of the position data
+            match positions {
+                GxVertexBufferPositionMut::S8(_values) => { /* Theres no need to swap i8's */ }
+                GxVertexBufferPositionMut::S16(values) => values.swap_bytes_mut(),
+                GxVertexBufferPositionMut::SkinnedS16(values) => values.swap_bytes_mut(),
+                GxVertexBufferPositionMut::F32(values) => values.swap_bytes_mut(),
+            }
         }
     }
 }
@@ -304,6 +380,17 @@ pub enum GxVertexBufferPositionMut<'a> {
     S16(&'a mut [GxPosS16]),
     SkinnedS16(&'a mut [GxSkinPosNorm]),
     F32(&'a mut [GxPosF32]),
+}
+
+#[derive(Debug)]
+pub enum GxVertexBufferIndex<'a> {
+    Index8(&'a [u8]),
+    Index16(&'a [u16]),
+}
+#[derive(Debug)]
+pub enum GxVertexBufferIndexMut<'a> {
+    Index8(&'a mut [u8]),
+    Index16(&'a mut [u16]),
 }
 
 #[derive(Debug, SwapBytes)]
@@ -478,6 +565,59 @@ pub struct GxDisplayListContainer {
     buffer: *mut (),
 
     pub constant_color: GxColor,
+}
+
+impl GxDisplayListContainer {
+    pub fn normalized_indicies(&self, index_type: GxAttrType) -> Vec<u16> {
+        match self.indicies(index_type).unwrap() {
+            GxVertexBufferIndex::Index8(value) => value.iter().map(|value| *value as u16).collect(),
+            GxVertexBufferIndex::Index16(value) => value.to_vec(),
+        }
+    }
+
+    pub fn indicies(&self, index_type: GxAttrType) -> Option<GxVertexBufferIndex<'_>> {
+        Some(match index_type {
+            GxAttrType::Index8 => GxVertexBufferIndex::Index8(unsafe {
+                array_ptr(
+                    self.buffer.cast::<u8>(),
+                    self.size as usize / std::mem::size_of::<u8>(),
+                )?
+            }),
+            GxAttrType::Index16 => GxVertexBufferIndex::Index16(unsafe {
+                array_ptr(
+                    self.buffer.cast::<u16>(),
+                    self.size as usize / std::mem::size_of::<u16>(),
+                )?
+            }),
+            _ => panic!("Unknown buffer index type"),
+        })
+    }
+    pub fn indicies_mut(&mut self, index_type: GxAttrType) -> Option<GxVertexBufferIndexMut<'_>> {
+        Some(match index_type {
+            GxAttrType::Index8 => GxVertexBufferIndexMut::Index8(unsafe {
+                array_ptr_mut(
+                    self.buffer.cast::<u8>(),
+                    self.size as usize / std::mem::size_of::<u8>(),
+                )?
+            }),
+            GxAttrType::Index16 => GxVertexBufferIndexMut::Index16(unsafe {
+                array_ptr_mut(
+                    self.buffer.cast::<u16>(),
+                    self.size as usize / std::mem::size_of::<u16>(),
+                )?
+            }),
+            _ => panic!("Unknown buffer index type"),
+        })
+    }
+
+    pub fn fix_indicies(&mut self) {
+        if let Some(indicies) = self.indicies_mut() {
+            match indicies {
+                GxVertexBufferIndexMut::Index8(values) => {}
+                GxVertexBufferIndexMut::Index16(values) => values.swap_bytes_mut(),
+            }
+        }
+    }
 }
 
 impl Fixable for GxDisplayListContainer {

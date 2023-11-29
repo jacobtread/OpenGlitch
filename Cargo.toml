@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2021"
 resolver = "2"
 
+[workspace]
+members = [".", "repack"]
+
 [dependencies]
 # Game engine
 bevy = { version = "0.12.0", features = ["dynamic_linking", "wav"] }

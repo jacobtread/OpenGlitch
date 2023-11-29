@@ -1,9 +1,13 @@
-use std::{fs::File, os::windows::fs::MetadataExt};
+use std::{
+    fs::{read_to_string, File},
+    os::windows::fs::MetadataExt,
+};
 
 use crate::constants::{WINDOW_DEFAULT_HEIGHT, WINDOW_DEFAULT_WIDTH};
 use bevy::{
     log::{Level, LogPlugin},
     prelude::*,
+    render::render_resource::PrimitiveTopology,
     window::{WindowResolution, WindowTheme},
 };
 use bevy_flycam::prelude::*;
@@ -43,7 +47,7 @@ fn main() {
         )
         .add_plugins(FramepacePlugin)
         .insert_resource(FramepaceSettings {
-            limiter: bevy_framepace::Limiter::from_framerate(30.),
+            limiter: bevy_framepace::Limiter::from_framerate(60.),
         })
         .add_plugins(VideoPlugin)
         .add_systems(Startup, init_startup_mesh_test)
@@ -52,6 +56,27 @@ fn main() {
 }
 
 fn init_startup_mesh_test(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>) {
+    let mut buffer = read_to_string("data/buffer_dump.txt").unwrap();
+    let values: Vec<[f32; 3]> = buffer
+        .lines()
+        .filter_map(|line| {
+            let mut split = line.splitn(3, ',');
+            let a = split.next()?;
+            let b = split.next()?;
+            let c = split.next()?;
+
+            let a: f32 = a.parse().ok()?;
+            let b: f32 = b.parse().ok()?;
+            let c: f32 = c.parse().ok()?;
+
+            Some((a, b, c))
+        })
+        .map(|(a, b, c)| [a, b, c])
+        .collect();
+
+    let mut mesh = Mesh::new(PrimitiveTopology::TriangleStrip);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, values);
+
     // let mut file = File::open("data/ape/gcdggltch00.ape").unwrap();
     // let mut header: FMesh = FMesh::read(&mut file).unwrap();
     // println!("Length: {}", file.metadata().unwrap().file_size());
@@ -65,14 +90,14 @@ fn init_startup_mesh_test(mut commands: Commands, mut meshes: ResMut<Assets<Mesh
     //     .pop()
     //     .unwrap();
     // let mesh = create_bevy_mesh(vb);
-    // let handle = meshes.add(mesh);
+    let handle = meshes.add(mesh);
 
-    // // Render the mesh with the custom texture using a PbrBundle, add the marker.
-    // commands.spawn((PbrBundle {
-    //     mesh: handle,
+    // Render the mesh with the custom texture using a PbrBundle, add the marker.
+    commands.spawn((PbrBundle {
+        mesh: handle,
 
-    //     ..default()
-    // },));
+        ..default()
+    },));
 }
 
 /// Plays the startup movie

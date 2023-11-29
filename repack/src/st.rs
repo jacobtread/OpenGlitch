@@ -487,7 +487,7 @@ pub struct FMeshMaterial {
     /// Average of the position of all verts using this material
     pub average_vert_pos: CFVec3,
     /// Hash key used in display list rendering (only valid in game)
-    pub dl_hash_key: u32,
+    _dl_hash_key: u32,
 }
 
 impl Fixable for FMeshMaterial {
