@@ -12,7 +12,7 @@ fn main() {
         .create(true)
         .write(true)
         .truncate(true)
-        .open("dump.txt")
+        .open("data/dump.txt")
         .unwrap();
 
     // Read entire file into a buffer
@@ -41,14 +41,14 @@ fn main() {
         .create(true)
         .write(true)
         .truncate(true)
-        .open("buffer_dump.txt")
+        .open("data/buffer_dump.txt")
         .unwrap();
 
     let mut buffer_dump_index = OpenOptions::new()
         .create(true)
         .write(true)
         .truncate(true)
-        .open("buffer_dump_index.txt")
+        .open("data/buffer_dump_index.txt")
         .unwrap();
 
     dbg!(&dx_mesh);
