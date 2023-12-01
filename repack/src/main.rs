@@ -16,7 +16,7 @@ fn main() {
         .unwrap();
 
     // Read entire file into a buffer
-    let buffer = std::fs::read("../data/ape/gcdggltch00.ape").unwrap();
+    let buffer = std::fs::read("data/ape/grdggltch00.ape").unwrap();
     // Drop extra buffer capacity
     let buffer: Box<[u8]> = buffer.into_boxed_slice();
 
@@ -30,10 +30,12 @@ fn main() {
 
     writeln!(&mut debug_dump, "{:#?}", &mesh).unwrap();
 
-    let gx_mesh: &raw::gc::GxMesh = mesh.impl_specific().unwrap();
-    let buffers: &[raw::gc::GxVertexBuffer] = gx_mesh.vertex_buffers().unwrap();
-    writeln!(&mut debug_dump, "{:#?}", gx_mesh).unwrap();
-    writeln!(&mut debug_dump, "{:#?}", buffers).unwrap();
+    // dbg!(&mesh.materials());
+
+    let dx_mesh: &mut raw::dx::DxMesh = mesh.impl_specific_mut().unwrap();
+    // let buffers: &[raw::dx::DxVertexBufferDescriptor] = dx_mesh.vertex_buffers().unwrap();
+    writeln!(&mut debug_dump, "{:#?}", dx_mesh).unwrap();
+    // writeln!(&mut debug_dump, "{:#?}", buffers).unwrap();
 
     let mut buffer_dump = OpenOptions::new()
         .create(true)
@@ -49,15 +51,19 @@ fn main() {
         .open("buffer_dump_index.txt")
         .unwrap();
 
-    let first_buffer = &buffers[0];
+    dbg!(&dx_mesh);
 
-    let values = first_buffer.normalized();
-    // let indices = first_buffer.normalized_indicies();
+    let index_buffers = dx_mesh.index_buffers();
 
-    for value in &values {
-        writeln!(&mut buffer_dump, "{},{},{}", value.x, value.y, value.z);
+    let index_buffer = *index_buffers.first().unwrap();
+    for value in index_buffer {
+        writeln!(&mut buffer_dump_index, "{}", value);
     }
-    println!("{}", values.len());
+
+    let vertex_buffer = dx_mesh.vertex_buffers_mut().unwrap();
+    writeln!(&mut debug_dump, "{:#?}", vertex_buffer).unwrap();
+
+    // println!("{}", values.len());
 
     // for value in indices {
     //     if value as usize > values.len() {
@@ -66,9 +72,12 @@ fn main() {
     //     writeln!(&mut buffer_dump_index, "{}", value);
     // }
 
-    for buffer in buffers {
-        let positions = buffer.positions().unwrap();
+    for buffer in vertex_buffer {
+        writeln!(&mut buffer_dump, "Buffer 1").unwrap();
+        let positions = buffer.positions();
 
-        writeln!(&mut debug_dump, "{:?}", positions).unwrap();
+        for [a, b, c] in positions {
+            writeln!(&mut buffer_dump, "{} {} {}", a, b, c).unwrap();
+        }
     }
 }

@@ -3,7 +3,7 @@ use std::ops::{Deref, DerefMut};
 use swapbytes::SwapBytes;
 
 use crate::{
-    raw::gc::{GxMesh, GxMeshMaterial, GxTexFmt, GxTexObj},
+    raw::dx::{DxMesh, DxMeshMaterial},
     types::FixedString,
 };
 
@@ -47,7 +47,7 @@ pub trait Fixable: SwapBytes {
     /// This is not safe, it relies on the values present in the compiled game
     /// assets being correct, that is the only assurance of correctness
     unsafe fn fix(&mut self, ptr: *mut u8) {
-        #[cfg(not(target_endian = "big"))]
+        #[cfg(not(target_endian = "little"))]
         {
             self.swap_bytes_mut();
         }
@@ -166,6 +166,7 @@ where
 
     // Try fix the elements
     if let Some(array) = array_ptr_mut(*value, length) {
+        println!("Fixing array {} {}", ptr as usize, *value as usize);
         array.iter_mut().for_each(|value| value.fix(ptr));
     }
 }
@@ -327,7 +328,7 @@ pub struct FMesh {
     tex_layer_array: *mut FMeshTexLayerID,
 
     /// Pointer to implementation-specific object data
-    mesh_is: *mut GxMesh,
+    mesh_is: *mut DxMesh,
 }
 
 impl Fixable for FMesh {
@@ -337,7 +338,10 @@ impl Fixable for FMesh {
         self.light_array = fix_offset(self.light_array, ptr);
         self.skeleton_index_array = fix_offset(self.skeleton_index_array, ptr);
         self.collision_tree = fix_offset(self.collision_tree, ptr);
+        println!("Premat");
+
         try_fix_array(&mut self.material_array, self.material_count, ptr);
+        println!("Postmat");
 
         // TODO: Fixup coll tree
 
@@ -384,8 +388,11 @@ impl FMesh {
         unsafe { array_ptr(self.collision_tree, self.coll_tree_count) }
     }
 
-    pub fn impl_specific(&self) -> Option<&GxMesh> {
+    pub fn impl_specific(&self) -> Option<&DxMesh> {
         unsafe { self.mesh_is.as_ref() }
+    }
+    pub fn impl_specific_mut(&self) -> Option<&mut DxMesh> {
+        unsafe { self.mesh_is.as_mut() }
     }
 }
 
@@ -482,7 +489,7 @@ pub struct FMeshMaterial {
     /// A mask that has bits set for each mesh part ID that uses it
     pub part_id_mask: u32,
     /// Pointer to the platform specific data for this material
-    pub platform_data: *mut GxMeshMaterial,
+    pub platform_data: *mut DxMeshMaterial,
     /// A bit mask that identifies all of the LOD that use this material
     pub lod_mask: u8,
     /// 0=normal, 1=appear in front of 0, 2=appear in front of 1, etc. (negative values not allowed)
@@ -516,10 +523,13 @@ pub struct FMeshMaterial {
 
 impl Fixable for FMeshMaterial {
     unsafe fn fix_offset(&mut self, ptr: *mut u8) {
+        println!("Shr");
         self.shader_light_registers = fix_offset(self.shader_light_registers, ptr);
         self.shader_surface_reigsters = fix_offset(self.shader_surface_reigsters, ptr);
 
-        try_fix(&mut self.platform_data, ptr)
+        println!("Pre");
+        try_fix(&mut self.platform_data, ptr);
+        println!("Post");
 
         // TODO: Fixup registers
 
@@ -644,8 +654,10 @@ bitflags! {
     #[repr(C)]
     pub struct FTexDataFlags: u8 {
         const NONE    = 0x00;
-        // Texture is created at runtime
-        const RUNTIME = 0x01;
+        // DXT texture
+        const DXT = 0x01;
+        // For streaming textures, this indicates that the texture is not in the cache
+        const NOT_IN_CACHE = 0x02;
     }
 }
 
@@ -671,16 +683,21 @@ pub struct FTexData {
     pub width: u16,
     // texture height
     pub height: u16,
-    // GC texel format used for this texture
-    pub gc_tex_fmt: GxTexFmt,
-    // Pointer to the GC platform texture object
-    pub gc_tex_obj: *mut GxTexObj,
+    // D3D texel format used for this texture
+    pub d3d_fmt_color: u32,
+    // D3D depth/stencil format (render targets only)
+    pub d3d_fmt_depth: u32,
     // Set bits indicate which stages this texture is selected into (0=none)
     pub attached_stages: u32,
     // Approximate bytes consumed by this texture
     pub texture_bytes: u32,
-    // Pointer to raw texture data
-    pub raw_texture: *mut (),
+    pub streaming_handle: *mut (),
+    // Pointer to the image data for the D3D texture if load-in-place
+    pub image_data: *mut (),
+    // Pointer to D3D texture object IDirect3DTexture8
+    pub d3d_texture: *mut (),
+    // Pointer to D3D depth-stencil surface (NULL=none) IDirect3DSurface8
+    pub d3d_depth_stencil: *mut (),
 }
 
 impl Fixable for FTexData {
@@ -688,9 +705,10 @@ impl Fixable for FTexData {
         self.tex_def.fix_offset(ptr);
         self.link.fix_offset(ptr);
 
-        try_fix(&mut self.gc_tex_obj, ptr);
-
-        self.raw_texture = fix_offset(self.raw_texture, ptr);
+        self.streaming_handle = fix_offset(self.streaming_handle, ptr);
+        self.image_data = fix_offset(self.image_data, ptr);
+        self.d3d_texture = fix_offset(self.d3d_texture, ptr);
+        self.d3d_depth_stencil = fix_offset(self.d3d_depth_stencil, ptr);
     }
 }
 
